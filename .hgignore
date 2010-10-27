@@ -1,0 +1,8 @@
+^run.bat$
+^run.sh$
+^runc.bat$
+^runc.sh$
+~$
+^_build/
+\.byte$
+\.native$

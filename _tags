@@ -1,0 +1,5 @@
+<*.ml> | <*.mli> : camlp4r, warn_A
+
+"ops.ml" | "extStream.ml" : -camlp4r, camlp4o
+
+"iteratees.ml" : camlp4:no_quot
