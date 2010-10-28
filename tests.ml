@@ -18,7 +18,7 @@ open Iteratees
 
 open Printf;
 value () = printf "before functor app\n";
-module I = It(IO);
+module I = Make(IO);
 value () = printf "after functor app\n";
 
 open I;
@@ -88,6 +88,12 @@ value test3 () =
   run_print pr i
 ;
 
+
+module H = Iteratees_http.It_http(IO)
+;
+
+open H
+;
 
 (* Pure tests, requiring no IO *)
 
