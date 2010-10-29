@@ -244,31 +244,25 @@ value dev_null = if Sys.os_type = "Win32" then "NUL" else "/dev/null";
 
 
 
-value tests_driver () = ignore & (
-  List.map runIO
-  [
+value tests_driver () =
+  let p i = ignore ((runIO & i) : res unit) in
+  (
     (* Complete headers, up to "header7: v7" *)
-    test_driver stream2list "test-files/test1.txt"
+    p & test_driver stream2list "test-files/test1.txt"
 
     (* The same *)
-  ; test_driver stream2list "test-files/test2.txt"
+  ; p & test_driver stream2list "test-files/test2.txt"
 
     (* "header3: v3", then EOF *)
-  ; test_driver stream2list "test-files/test3.txt"
+  ; p & test_driver stream2list "test-files/test3.txt"
 
     (* Incomplete headers [], EOF *)
-  ;
-    test_driver stream2list dev_null
-  ]
-  @
-  List.map runIO
-  [
-    test_driver print_lines "test-files/test1.txt"
-  ; test_driver print_lines "test-files/test2.txt"
-  ; test_driver print_lines "test-files/test3.txt"
-  ; test_driver print_lines dev_null
-  ]
+  ; p & test_driver stream2list dev_null
 
+  ; p & test_driver print_lines "test-files/test1.txt"
+  ; p & test_driver print_lines "test-files/test2.txt"
+  ; p & test_driver print_lines "test-files/test3.txt"
+  ; p & test_driver print_lines dev_null
   )
 ;
 
