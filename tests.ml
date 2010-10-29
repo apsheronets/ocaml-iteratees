@@ -104,7 +104,7 @@ value test_str1 = expl &
 
 value read_lines_and_one_more_line : iteratee 'a 'b =
   joinI (enum_lines stream2list) >>= fun lines ->
-  http_line >>= fun after ->
+  line >>= fun after ->
   return (lines,after)
 ;
 
@@ -185,7 +185,7 @@ in
 let () = dbg "rl: lines got\n" in
     is_stream_finished >>= fun e ->
 let () = dbg "rl: e got\n" in
-    http_line >>= fun after ->
+    line >>= fun after ->
 let () = dbg "rl: rest got\n" in
     return ((lines, e), after)
   in
@@ -208,12 +208,12 @@ value () = exit 0;
 
 (* Test Fd driver *)
 
-value test_driver (line_collector : iteratee http_line 'a) filepath : IO.m unit
+value test_driver (line_collector : iteratee line 'a) filepath : IO.m unit
  =
   let read_lines_and_one_more_line : iteratee char 'y =
     joinI (enum_lines line_collector) >>= fun lines ->
     is_stream_finished >>= fun e ->
-    http_line >>= fun after ->
+    line >>= fun after ->
     return ((lines, e), after)
   in
   mprintf "Opening file %S\n" filepath >>% fun () ->
@@ -263,10 +263,10 @@ value tests_driver () = ignore & (
   @
   List.map runIO
   [
-    test_driver http_print_lines "test-files/test1.txt"
-  ; test_driver http_print_lines "test-files/test2.txt"
-  ; test_driver http_print_lines "test-files/test3.txt"
-  ; test_driver http_print_lines dev_null
+    test_driver print_lines "test-files/test1.txt"
+  ; test_driver print_lines "test-files/test2.txt"
+  ; test_driver print_lines "test-files/test3.txt"
+  ; test_driver print_lines dev_null
   ]
 
   )
@@ -283,8 +283,8 @@ value tests_driver () = ignore & (
    Don't know why, but there is no "joinI" in original sources.
 *)
 
-value http_line_printer : iteratee char unit =
-  joinI & enum_lines http_print_lines
+value line_printer : iteratee char unit =
+  joinI & enum_lines print_lines
 ;
 
 
@@ -306,7 +306,7 @@ value read_headers_print_body : iteratee char unit =
       print_headers headers
    ]) >>= fun () ->
    (lift%mprintf) "\nLines of the body follow:\n" >>= fun () ->
-   joinI & enum_chunk_decoded http_line_printer
+   joinI & enum_chunk_decoded line_printer
 ;
 
 
@@ -321,9 +321,9 @@ value read_headers_print_body : iteratee char unit =
 
 value print_headers_print_body () : iteratee 'a unit =
   (lift%mprintf) "\nLines of the headers follow:\n" >>= fun () ->
-  http_line_printer >>= fun () ->
+  line_printer >>= fun () ->
   (lift%mprintf) "\nLines of the body follow:\n" >>= fun () ->
-  joinI & enum_chunk_decoded http_line_printer
+  joinI & enum_chunk_decoded line_printer
 ;
 
 

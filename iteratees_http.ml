@@ -24,7 +24,7 @@ open I
    Reading headers and the content from an HTTP-like stream
 *)
 
-type http_line = string  (* The line of text, terminators are not included *)
+type line = string  (* The line of text, terminators are not included *)
 ;
 
 
@@ -37,7 +37,7 @@ type http_line = string  (* The line of text, terminators are not included *)
    ones. It knows nothing about the representation of Iteratees.
 *)
 
-value (http_line : iteratee char ([= `No_term | `Term] * http_line)) =
+value (line : iteratee char ([= `No_term | `Term] * line)) =
   let lf = ['\n'] in
   let crlf = ['\r'; '\n'] in
   let check l ts =
@@ -62,7 +62,7 @@ let () = dbg "http_line: %S\n" l in
    with non-trivial actions during chunk processing
 *)
 
-value (http_print_lines : iteratee http_line unit) =
+value (print_lines : iteratee line unit) =
   let pr_line l = print_line (">> read line: " ^ l)
   in
   ie_cont step
@@ -104,8 +104,8 @@ value rec (enum_lines : enumeratee char string 'a) i =
   match i with
   [ IE_cont None k ->
 let () = dbg "enum_lines: IE_cont\n" in
-      http_line >>= fun line ->
-        match line with
+      line >>= fun term_line ->
+        match term_line with
         [ (`Term, "") ->
 let () = dbg "enum_lines:   empty line\n" in
             return i  (* empty line, normal exit *)
