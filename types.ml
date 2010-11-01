@@ -17,7 +17,7 @@ type place = string;
 module type MonadIO
  =
   sig
-    type m 'a;
+    type m +'a;
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
 
@@ -43,5 +43,5 @@ module type MonadIO
    See function [mres] in functor.
 *)
 
-type res 'a = [= `Ok of 'a | `Error of (exn * place) ]
+type res +'a = [= `Ok of 'a | `Error of (exn * place) ]
 ;

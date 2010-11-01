@@ -9,7 +9,7 @@ value res_of_exn ep : res 'a = `Error ep
 module Direct_IO
  :
   sig
-    type m 'a = res 'a;
+    type m +'a = res 'a;
 
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
@@ -32,7 +32,7 @@ module Direct_IO
   end
  =
   struct
-    type m 'a = res 'a;
+    type m +'a = res 'a;
     value return x = `Ok x;
     value bind f m =
       match m with
