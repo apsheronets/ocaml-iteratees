@@ -43,9 +43,10 @@ open Types
 (* +
    In OCaml, Iteratees' [err_msg] is represented by simple exception.
    [err_msg] can be Iteratees' internal exception, user-defined Iteratees'
-   exception, or an IO exception, wrapped into [EIO] exception.
+   exception, or an IO exception with place, wrapped into [Types.EIO]
+   exception.
 
-   IO errors (see MonadIO signature) carry the tuple of exception and
+   IO exceptions (see MonadIO signature) carry the tuple of exception and
    the place where exception was raised (similar to
    [Unix.Unix_error (error, place, argument)] exception; I find it useful).
 
@@ -78,10 +79,9 @@ exception Divergent_iteratee of place;
    it depends on [IO.error] to return the value of [IO.m 'a] type.
 *)
 
-value ierr_of_merr (ep : (exn * place)) : err_msg =
-  match ep with
-  [ (Iteratees_err_msg e, _) -> e
-  | ep -> EIO ep
+value ierr_of_merr (e : exn) : err_msg =
+  match e with
+  [ Iteratees_err_msg e | e -> e
   ]
 ;
 
@@ -289,8 +289,8 @@ value (liftI : IO.m (iteratee 'el 'a) -> iteratee 'el 'a) m =
 value merr_of_ierr (e : err_msg) : IO.m 'a =
   IO.error &
   match e with
-  [ EIO ep -> ep
-  | e -> (Iteratees_err_msg e, "")
+  [ EIO _ -> e
+  | e -> Iteratees_err_msg e
   ]
 ;
 
@@ -332,7 +332,7 @@ outer_iter =
       | IE_cont opt_err _inner_k2 ->
           match opt_err with
           [ Some e -> merr_of_ierr e
-          | None -> IO.error (Divergent_iteratee "joinI", "")
+          | None -> IO.error (Divergent_iteratee "joinI")
           ]
       ]
   ]
@@ -365,8 +365,8 @@ let () = dbg "run: exn=%s\n" &
   ]
 in
           IO.error & match opt_exn with
-          [ None -> (Divergent_iteratee "run", "run")
-          | Some e -> (e, "")
+          [ None -> (Divergent_iteratee "run")
+          | Some e -> e
           ]
       ]
   ]
@@ -749,7 +749,7 @@ value mprintf fmt = Printf.ksprintf (IO.write IO.stdout) fmt
 value (mres : IO.m 'a -> IO.m (res 'a)) m =
   IO.catch
     (fun () -> m >>% fun r -> IO.return & `Ok r)
-    (fun ep -> IO.return & `Error ep)
+    (fun e -> IO.return & `Error e)
 ;
 
 value (_munres : res 'a -> IO.m 'a) r =
@@ -771,8 +771,8 @@ value (enum_fd : IO.input_channel -> enumerator char 'a) inch i =
   let rec loop k =
     mres (IO.read_into inch buf_str 0 buffer_size) >>% fun read_res ->
     match read_res with
-    [ `Error ep ->
-        k (EOF (some & ierr_of_merr ep)) >>% IO.return % fst
+    [ `Error e ->
+        k (EOF (some & ierr_of_merr e)) >>% IO.return % fst
     | `Ok have_read ->
         mprintf "Read buffer, size %i\n" have_read >>% fun () ->
         let () = assert (have_read >= 0) in

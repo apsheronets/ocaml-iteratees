@@ -40,17 +40,24 @@ value test_iteratee : iteratee char (char * char) =
 ;
 
 
-value string_of_ep (e, p) =
+value string_of_e e =
+  let (e, p) =
+    match e with
+    [ Iteratees_err_msg e -> (e, "")
+    | EIO (e, p) -> (e, p)
+    | e -> (e, "")
+    ]
+  in
   sprintf "error: %s%s\n"
-    (match e with [ Iteratees_err_msg e
-                  | e -> Printexc.to_string e ])
+    (Printexc.to_string e)
     (if p = "" then "" else sprintf " (at %S)" p)
 ;
+
 
 value print_res f r =
   match r with
   [ `Ok v -> printf "res: ok: %s\n" (f v)
-  | `Error ep -> printf "%s\n" & string_of_ep ep
+  | `Error e -> printf "%s\n" & string_of_e e
   ]
 ;
 
@@ -121,7 +128,7 @@ value testp12 enum =
     enum read_lines_and_one_more_line
   in
   match res with
-  [ `Error ep -> failwith & string_of_ep ep
+  [ `Error e -> failwith & string_of_e e
   | `Ok (lines, rest) ->
        ( assert (lines =
            [ "header1: v1"; "header2: v2"; "header3: v3"; "header4: v4"
@@ -233,9 +240,9 @@ value test_driver (line_collector : iteratee line 'a) filepath : IO.m unit
       mprintf "Problem: %s\n" (Printexc.to_string e) >>% fun () ->
       mprintf "Incomplete headers.\n" >>% fun () ->
       IO.return ()
-  | `Error ep ->
-      mprintf "enumerator's error: %s\n" (string_of_ep ep) >>% fun () ->
-      IO.error ep
+  | `Error e ->
+      mprintf "enumerator's error: %s\n" (string_of_e e) >>% fun () ->
+      IO.error e
   ]
 ;
 
@@ -334,7 +341,7 @@ value test_driver_full iter filepath =
 value print_unit_res r =
   match r with
   [ `Ok () -> printf "ok.\n"
-  | `Error ep -> printf "%s\n" & string_of_ep ep
+  | `Error e -> printf "%s\n" & string_of_e e
   ]
 ;
 

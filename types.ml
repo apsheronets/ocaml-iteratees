@@ -8,6 +8,14 @@ type place = string;
 
 
 (* +
+   IO exception, carrying the real IO exception and the place
+   (usually function name) where it was raised.
+*)
+
+exception EIO of (exn * place);
+
+
+(* +
    This is a signature for IO monad.  These functions and types are used
    by Iteratees functor.  It's possible that your implementation of IO
    have much more functions than MonadIO, so you should not restrict
@@ -21,8 +29,8 @@ module type MonadIO
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
 
-    value error : (exn * place) -> m 'a;
-    value catch : (unit -> m 'a) -> ((exn * place) -> m 'a) -> m 'a;
+    value error : exn -> m 'a;
+    value catch : (unit -> m 'a) -> (exn -> m 'a) -> m 'a;
 
     type output_channel;
     value stdout : output_channel;
@@ -43,5 +51,5 @@ module type MonadIO
    See function [mres] in functor.
 *)
 
-type res +'a = [= `Ok of 'a | `Error of (exn * place) ]
+type res +'a = [= `Ok of 'a | `Error of exn ]
 ;

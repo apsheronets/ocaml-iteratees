@@ -3,7 +3,7 @@ open Types
 
 (* OCaml Pervasives IO *)
 
-value res_of_exn ep : res 'a = `Error ep
+value res_of_exn e : res 'a = `Error e
 ;
 
 module Direct_IO
@@ -13,9 +13,9 @@ module Direct_IO
 
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
-    value catch : (unit -> m 'a) -> ((exn * place) -> m 'a) -> m 'a;
+    value catch : (unit -> m 'a) -> (exn -> m 'a) -> m 'a;
 
-    value error : (exn * place) -> m 'a;
+    value error : exn -> m 'a;
 
     type output_channel;
     value stdout : output_channel;
@@ -63,15 +63,15 @@ module Direct_IO
 *)
     value wrap1 place f = fun a ->
       try `Ok (f a)
-      with [ e -> res_of_exn (e, place) ]
+      with [ e -> res_of_exn (EIO (e, place)) ]
     ;
     value wrap2 place f = fun a b ->
       try `Ok (f a b)
-      with [ e -> res_of_exn (e, place) ]
+      with [ e -> res_of_exn (EIO (e, place)) ]
     ;
     value wrap4 place f = fun a b c d ->
       try `Ok (f a b c d)
-      with [ e -> res_of_exn (e, place) ]
+      with [ e -> res_of_exn (EIO (e, place)) ]
     ;
 
     value read_into = wrap4 "read_into" Pervasives.input;
