@@ -16,6 +16,16 @@ exception EIO of (exn * place);
 
 
 (* +
+   Sometimes it's more convenient to have an IO result wrapped
+   in value with type [res 'a], than having to [IO.catch] errors.
+   See function [mres] in functor.
+*)
+
+type res +'a = [= `Ok of 'a | `Error of exn ]
+;
+
+
+(* +
    This is a signature for IO monad.  These functions and types are used
    by Iteratees functor.  It's possible that your implementation of IO
    have much more functions than MonadIO, so you should not restrict
@@ -41,15 +51,7 @@ module type MonadIO
     value close_in : input_channel -> m unit;  (* Lwt_io.close inch *)
     value read_into : input_channel -> string -> int -> int -> m int;
        (* in lwt: read_into ic buffer offset length *)
+
+    value runIO : m 'a -> res 'a;
   end
-;
-
-
-(* +
-   Sometimes it's more convenient to have an IO result wrapped
-   in value with type [res 'a], than having to [IO.catch] errors.
-   See function [mres] in functor.
-*)
-
-type res +'a = [= `Ok of 'a | `Error of exn ]
 ;

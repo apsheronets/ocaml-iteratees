@@ -1,4 +1,5 @@
-TARGETS="iteratees.byte tests.byte"
+EXT="byte"
+TARGETS="iteratees.$EXT tests_direct.$EXT"
 # bash
 rm -f $TARGETS && ocamlbuild iteratees.inferred.mli $TARGETS && \
   (for X in $TARGETS;

@@ -4,22 +4,23 @@ open Ops
 open Types
 ;
 
-open Direct_IO
-;
-
 module IO = Direct_IO
-;
-
-value runIO = IO.runIO
 ;
 
 open Iteratees
 ;
 
+module Tests_functor(IO : MonadIO)
+=
+struct
+
+value runIO = IO.runIO
+;
+
 open Printf;
-value () = printf "before functor app\n";
+value () = printf "before functor app\n%!";
 module I = Make(IO);
-value () = printf "after functor app\n";
+value () = printf "after functor app\n%!";
 
 open I;
 
@@ -145,7 +146,6 @@ value testp1 () = testp12 (enum_pure_1chunk test_str1)
 
 value testp2 () = testp12 (enum_pure_nchunk test_str1 5)
 ;
-
 
 value testw1 () =
   let test_str = expl "header1: v1\rheader2: v2\r\nheader3:\t v3"
@@ -401,3 +401,5 @@ value () =
 
   ; printf "TESTS END.\n"
   );
+
+end;
