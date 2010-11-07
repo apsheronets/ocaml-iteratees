@@ -30,6 +30,12 @@ type t 'a = C.t 'a == private { arr : array 'a; ofs : int; len : int };
 value length s = s.len
 ;
 
+value get s i =
+  if i < 0 || i >= s.len
+  then invalid_arg "Subarray.get"
+  else s.arr.(s.ofs + i)
+;
+
 value empty = C.empty;
 
 open C;
@@ -81,7 +87,7 @@ value fold dir func init s =
         inner
           ~i:(i + stp)
           ~left:(left - 1)
-          ~cur:(func init s.arr.(i))
+          ~cur:(func cur s.arr.(i))
 ;
 
 value to_list s =
