@@ -383,6 +383,72 @@ value tests_driver_full () =
 ;
 
 
+(* +
+   This is my test for enumeratee that transforms iteratee over
+   utf8 chars (type [It_misc.uchar]) to iteratee over octets (type [char]).
+*)
+
+module U = It_misc.UTF8(IO);
+
+value (dump_utf8_chars : iteratee U.uchar unit) =
+ let pr s = mprintf "dump_utf8_chars: %s\n" s in
+ ie_cont inner
+ where rec inner s =
+  match s with
+  [ EOF opt_err ->
+      match opt_err with
+      [ None -> pr "natural end"
+      | Some e -> pr & sprintf "unnatural end: \"%s\"" & Printexc.to_string e
+      ]
+      >>% fun () ->
+      match opt_err with
+      [ None -> ie_doneM () s
+      | Some e -> IO.return & (throw_err e, s)
+      ]
+  | Chunk c ->
+      pr
+       (sprintf "chunk of %i chars: [%s]"
+        (S.length c)
+        (String.concat "" &
+         List.map (fun c -> sprintf "&#x%X;" (c : U.uchar :> int)) &
+         S.to_list c)
+       )
+      >>% fun () ->
+      ie_contM inner
+  ]
+;
+
+
+value utf8_chars = expl "Мама мыла раму.  Qwert."
+;
+
+exception Myexc;
+
+value test_utf8_enumeratee () =
+(
+  assert ((
+    runA & enum_pure_nchunk utf8_chars 3
+           (joinI & U.utf8_of_char dump_utf8_chars)
+    ) = `Ok ()
+  )
+;
+  let res =
+      runA & (enum_pure_nchunk utf8_chars 3 >>> enum_err Myexc)
+             (joinI & U.utf8_of_char dump_utf8_chars)
+  in
+(*
+  match res with
+  [ `Ok () -> assert False
+  | `Error e -> Printf.printf "exn: %s\n%!" (Printexc.to_string e)
+  ]
+*)
+    assert (res = `Error (Iteratees_err_msg Myexc))
+;
+  ()
+)
+;
+
+
 
 value () =
   ( printf "TESTS BEGIN.\n"
@@ -398,6 +464,8 @@ value () =
   ; tests_driver ()
 
   ; tests_driver_full ()
+
+  ; test_utf8_enumeratee ()
 
   ; printf "TESTS END.\n"
   );

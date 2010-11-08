@@ -63,6 +63,10 @@ value of_string str =
 value of_array arr = C.mk ~arr ~ofs:0 ~len:(Array.length arr)
 ;
 
+value of_array_sub arr ofs len =
+  C.mk ~arr ~ofs ~len
+;
+
 value of_list lst = of_array (Array.of_list lst)
 ;
 
