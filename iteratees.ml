@@ -28,7 +28,7 @@ value enum_fd_buffer_size = ref 4096
 value break_chars_buf_init_size = 25
 ;
 
-open Ops
+open It_Ops
 ;
 
 open Dbg
@@ -37,7 +37,7 @@ open Dbg
 module S = Subarray
 ;
 
-open Types
+open It_Types
 ;
 
 (* +

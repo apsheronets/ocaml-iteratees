@@ -1,0 +1,6 @@
+name="iteratees"
+version="0.1"
+description="Iteratees (safe, practical, declarative input processing)"
+requires="unix, lwt, lwt.unix"
+archive(byte)="iteratees.cma"
+archive(native)="iteratees.cmxa"

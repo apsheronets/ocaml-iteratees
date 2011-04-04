@@ -1,4 +1,4 @@
-open Ops
+open It_Ops
 ;
 
 module S = Subarray
@@ -20,7 +20,7 @@ module Subarray_cat
     type t 'a = array (Subarray.t 'a)
     ;
 
-    open Ops
+    open It_Ops
     ;
 
     value make lst = Array.of_list &
@@ -65,7 +65,7 @@ module Subarray_cat
 ;
 
 
-module UTF8(IO : Types.MonadIO)
+module UTF8(IO : It_Types.MonadIO)
  :
   sig
     type uchar = private int;
