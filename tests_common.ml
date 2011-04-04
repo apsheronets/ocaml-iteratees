@@ -4,8 +4,10 @@ open Ops
 open Types
 ;
 
+(*
 module IO = Direct_IO
 ;
+*)
 
 open Iteratees
 ;
@@ -17,10 +19,11 @@ struct
 value runIO = IO.runIO
 ;
 
-open Printf;
-value () = printf "before functor app\n%!";
+module P = Printf;
+value sprintf fmt = P.sprintf fmt;
+value () = P.printf "before functor app\n%!";
 module I = Make(IO);
-value () = printf "after functor app\n%!";
+value () = P.printf "after functor app\n%!";
 
 open I;
 
@@ -57,8 +60,8 @@ value string_of_e e =
 
 value print_res f r =
   match r with
-  [ `Ok v -> printf "res: ok: %s\n" (f v)
-  | `Error e -> printf "%s\n" & string_of_e e
+  [ `Ok v -> P.printf "res: ok: %s\n" (f v)
+  | `Error e -> P.printf "%s\n" & string_of_e e
   ]
 ;
 
@@ -340,8 +343,8 @@ value test_driver_full iter filepath =
 
 value print_unit_res r =
   match r with
-  [ `Ok () -> printf "ok.\n"
-  | `Error e -> printf "%s\n" & string_of_e e
+  [ `Ok () -> P.printf "ok.\n"
+  | `Error e -> P.printf "%s\n" & string_of_e e
   ]
 ;
 
@@ -439,7 +442,7 @@ value test_utf8_enumeratee () =
 (*
   match res with
   [ `Ok () -> assert False
-  | `Error e -> Printf.printf "exn: %s\n%!" (Printexc.to_string e)
+  | `Error e -> P.printf "exn: %s\n%!" (Printexc.to_string e)
   ]
 *)
     assert (res = `Error (Iteratees_err_msg Myexc))
@@ -467,7 +470,7 @@ value limited_iteratee : iteratee char int =
 
 
 value test_limit ~feed_cont n =
- let () = printf "test_limit: n=%i, feed_cont=%b\n%!" n feed_cont in
+ let () = P.printf "test_limit: n=%i, feed_cont=%b\n%!" n feed_cont in
  let ctch ~b it =
    if not b
    then
@@ -476,7 +479,7 @@ value test_limit ~feed_cont n =
      catchk
       it
       (fun err_msg _cont ->
-         let () = printf "limited: caught %s%!" &
+         let () = P.printf "limited: caught %s%!" &
            match err_msg with
            [ Iteratees_err_msg e | e -> Printexc.to_string e ]
          in
@@ -491,18 +494,18 @@ value test_limit ~feed_cont n =
           ( match it with
             [ IE_done i -> return & Some i
             | IE_cont None cont ->
-                let () = printf "limited: cont wants more data, %!" in
+                let () = P.printf "limited: cont wants more data, %!" in
                 if not feed_cont
                 then
-                  let () = printf "ignoring.\n%!" in
+                  let () = P.printf "ignoring.\n%!" in
                   lift (cont (EOF None)) >>= fun _ ->
                   return None
                 else
-                  let () = printf "feeding.\n%!" in
+                  let () = P.printf "feeding.\n%!" in
                   ie_cont cont >>= fun i ->
                   return & Some i
             | IE_cont (Some e) _ ->
-                let () = printf "limited: error: %s\n" & Printexc.to_string e
+                let () = P.printf "limited: error: %s\n" & Printexc.to_string e
                 in
                   return None
             ]) >>= fun oi ->
@@ -513,19 +516,19 @@ value test_limit ~feed_cont n =
   in
   match res with
   [ `Ok (oi, str) ->
-      Printf.printf "limited: i=%s str=%S\n\n%!"
+      P.printf "limited: i=%s str=%S\n\n%!"
         (match oi with
          [ None -> "None"
          | Some i -> string_of_int i
          ])
         str
-  | `Error e -> Printf.printf "exn: %s\n\n%!" &
+  | `Error e -> P.printf "exn: %s\n\n%!" &
       match e with
       [ Iteratees_err_msg e | e -> Printexc.to_string e
       ]
   ]
  with
- [ e -> Printf.printf "ACHTUNG!  uncaught exn: %s\n%!" & Printexc.to_string e ]
+ [ e -> P.printf "ACHTUNG!  uncaught exn: %s\n%!" & Printexc.to_string e ]
 ;
 
 
@@ -542,7 +545,7 @@ value test_limit ~feed_cont n =
 
 
 value test_limits () =
-  ( printf "\n%!"
+  ( P.printf "\n%!"
   ; test_limit ~feed_cont:False 10
   ; test_limit ~feed_cont:False 5
   ; test_limit ~feed_cont:True 5
@@ -551,7 +554,7 @@ value test_limits () =
 
 
 value () =
-  ( printf "TESTS BEGIN.\n"
+  ( P.printf "TESTS BEGIN.\n"
 
   ; test12 5
   ; test12 2
@@ -569,7 +572,7 @@ value () =
 
   ; test_limits ()
 
-  ; printf "TESTS END.\n"
+  ; P.printf "TESTS END.\n"
   );
 
 end;
