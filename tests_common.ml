@@ -385,10 +385,10 @@ value tests_driver_full () =
 
 (* +
    This is my test for enumeratee that transforms iteratee over
-   utf8 chars (type [It_misc.uchar]) to iteratee over octets (type [char]).
+   utf8 chars (type [I.UTF8.uchar]) to iteratee over octets (type [char]).
 *)
 
-module U = It_misc.UTF8(IO);
+module U = I.UTF8;
 
 value (dump_utf8_chars : iteratee U.uchar unit) =
  let pr s = mprintf "dump_utf8_chars: %s\n" s in
@@ -450,6 +450,106 @@ value test_utf8_enumeratee () =
 
 
 
+value limit_chars = expl "12345678abcdefgh"
+;
+
+
+exception Bad_int of string
+;
+
+
+value limited_iteratee : iteratee char int =
+  let is_digit = fun [ '0'..'9' -> True | _ -> False ] in
+  break_chars (not % is_digit) >>= fun num_str ->
+  try return & int_of_string num_str
+  with [ Failure _ -> throw_err & Bad_int num_str ]
+;
+
+
+value test_limit ~feed_cont n =
+ let () = printf "test_limit: n=%i, feed_cont=%b\n%!" n feed_cont in
+ let ctch ~b it =
+   if not b
+   then
+     it
+   else
+     catchk
+      it
+      (fun err_msg _cont ->
+         let () = printf "limited: caught %s%!" &
+           match err_msg with
+           [ Iteratees_err_msg e | e -> Printexc.to_string e ]
+         in
+           throw_err err_msg
+      )
+ in
+ try
+  let res = runA &
+    (enum_pure_nchunk limit_chars 3)
+    ( ctch ~b:True
+        ( (limit n limited_iteratee) >>= fun it ->
+          ( match it with
+            [ IE_done i -> return & Some i
+            | IE_cont None cont ->
+                let () = printf "limited: cont wants more data, %!" in
+                if not feed_cont
+                then
+                  let () = printf "ignoring.\n%!" in
+                  lift (cont (EOF None)) >>= fun _ ->
+                  return None
+                else
+                  let () = printf "feeding.\n%!" in
+                  ie_cont cont >>= fun i ->
+                  return & Some i
+            | IE_cont (Some e) _ ->
+                let () = printf "limited: error: %s\n" & Printexc.to_string e
+                in
+                  return None
+            ]) >>= fun oi ->
+          break_chars (fun _ -> False) >>= fun str ->
+          return (oi, str)
+        )
+    )
+  in
+  match res with
+  [ `Ok (oi, str) ->
+      Printf.printf "limited: i=%s str=%S\n\n%!"
+        (match oi with
+         [ None -> "None"
+         | Some i -> string_of_int i
+         ])
+        str
+  | `Error e -> Printf.printf "exn: %s\n\n%!" &
+      match e with
+      [ Iteratees_err_msg e | e -> Printexc.to_string e
+      ]
+  ]
+ with
+ [ e -> Printf.printf "ACHTUNG!  uncaught exn: %s\n%!" & Printexc.to_string e ]
+;
+
+
+(*
+
+    ( ctch ~b:True
+        ( (joinI & limit n limited_iteratee) >>= fun i ->
+          break_chars (fun _ -> False) >>= fun str ->
+          return (i, str)
+        )
+    )
+
+*)
+
+
+value test_limits () =
+  ( printf "\n%!"
+  ; test_limit ~feed_cont:False 10
+  ; test_limit ~feed_cont:False 5
+  ; test_limit ~feed_cont:True 5
+  )
+;
+
+
 value () =
   ( printf "TESTS BEGIN.\n"
 
@@ -466,6 +566,8 @@ value () =
   ; tests_driver_full ()
 
   ; test_utf8_enumeratee ()
+
+  ; test_limits ()
 
   ; printf "TESTS END.\n"
   );

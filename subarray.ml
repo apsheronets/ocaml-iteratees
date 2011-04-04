@@ -183,6 +183,36 @@ value break pred s =
 
 
 (* +
+   [break_limit ~limit pred s] looks at first [limit] elements.
+   If found element matching [pred], then [`Found (prefix, rest)]
+   returned.  If the limit is hit, then [`Hit_limit] returned
+   (so, if it is ok for you, use [split_at limit s] to get pieces).
+   If the end of chunk is hit, then [`Hit_end] returned (and
+   the whole [s] does not match [pred]).
+   If [limit = length s] and no elements found, then [`Hit_limit]
+   returned (limit has more priority than chunk's end).
+*)
+
+value break_limit ~limit pred s =
+  inner 0
+  where rec inner i =
+    if i = limit
+    then
+      `Hit_limit
+    else
+      if i = s.len
+      then
+        `Hit_end
+      else
+        if pred s.arr.(s.ofs + i)
+        then
+          `Found (split_at i s)
+        else
+          inner (i + 1)
+;
+
+
+(* +
    [drop_while pred s] returns the remaining "substring" of [s]
    which remains after cutting off the longest prefix (possibly empty)
    of [s] of elements that satisfy predicate [pred].
@@ -206,4 +236,22 @@ value map f s =
   Array.map f &
   Array.init s.len &
   fun i -> s.arr.(s.ofs + i)
+;
+
+value copy s =
+  mk ~arr:(Array.sub s.arr s.ofs s.len) ~ofs:0 ~len:s.len
+;
+
+
+(* concatenate previously splitted pieces (b follows a) *)
+
+value concat_splitted a b =
+  match (a.len, b.len) with
+  [ (0, _) -> b
+  | (_, 0) -> a
+  | (alen, blen) ->
+      if a.arr != b.arr then invalid_arg "Subarray.concat: arr" else
+      if a.ofs + alen <> b.ofs then invalid_arg "S.concat: ranges" else
+      C.mk ~arr:a.arr ~ofs:a.ofs ~len:(alen + blen)
+  ]
 ;

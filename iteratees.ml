@@ -186,19 +186,18 @@ f it =
   match it with
   [ IE_done a -> f a
   | IE_cont e k ->
-      let docase it_s =
-        match it_s with
-        [ (IE_done a, stream) ->
-            match f a with
-            [
-              IE_cont None m -> m stream
-            | (IE_cont (Some _) _ | IE_done _) as i ->
-                IO.return (i, stream)
-            ]
-        | (((IE_cont _) as i), s) -> IO.return (bindI f i, s)
-        ]
-      in
-        IE_cont e (fun s -> (k s >>% docase))
+      IE_cont e
+        (fun s ->
+           k s >>% fun
+           [ (IE_done a, stream) ->
+               match f a with
+               [ IE_cont None m -> m stream
+               | (IE_cont (Some _) _ | IE_done _) as i ->
+                   IO.return (i, stream)
+               ]
+           | (((IE_cont _) as i), s) -> IO.return (bindI f i, s)
+           ]
+        )
   ]
 ;
 
@@ -255,7 +254,9 @@ value empty_stream = Chunk S.empty
    "empty_stream" in ie_contM code is the reflection of fact (1).
 *)
 
-value ie_doneM x s = IO.return (IE_done x, s)
+value
+  ( ie_doneM : 'a -> stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el) )
+  x s = IO.return (IE_done x, s)
 ;
 
 value ie_contM k = IO.return (IE_cont None k, empty_stream)
@@ -1008,6 +1009,362 @@ let () = dbg "enum_words: %S\n" w in
         )
   | IE_cont (Some _) _ | IE_done _ -> return i
   ]
+;
+
+
+module SC = Subarray_cat
+;
+
+module UTF8
+ :
+  sig
+    type uchar = private int;
+    value utf8_of_char : enumeratee char uchar 'a;
+  end
+ =
+  struct
+    type uchar = int;
+
+    exception Bad_utf8 of string
+    ;
+
+(*  without actual conversion:
+    value sc_ulen sc =
+      let len = SC.length sc in
+      (len, len, None)
+    ;
+    value sc_recode ~scfrom ~arrto ~uchars =
+      for i = 0 to uchars-1 do
+      ( arrto.(i) := Char.code & SC.get scfrom i
+      )
+      done
+    ;
+*)
+
+    value relaxed_utf8 = ref False  (* TODO: check it. *)
+    ;
+
+
+    value in_tail byte =
+      byte land 0b11_000_000 = 0b10_000_000
+
+    and bad_tail =
+      some & Bad_utf8 "tail != 0x80..0xBF"
+    ;
+
+
+    value decode_4bytes a b c d =
+      ((a land 0b00_000_111) lsl 18) lor
+      ((b land 0b00_111_111) lsl 12) lor
+      ((c land 0b00_111_111) lsl 6) lor
+      (d land 0b00_111_111)
+    ;
+
+
+    (* returns (count_of_chars, length_in_bytes, option error) *)
+    value (sc_ulen : SC.t char -> (int * int * option exn)) sc =
+      let sc_len = SC.length sc in
+      let get i = Char.code (SC.get sc i) in
+      let rec loop ~ch ~i =
+        if i = sc_len
+        then
+          (ch, i, None)
+        else
+          let byte = get i in
+          if byte < 0x80
+          then loop ~ch:(ch+1) ~i:(i+1)
+          else if byte <= 0xBF
+          then (ch, i, some & Bad_utf8 "head 0x80..0xBF")
+          else if byte <= 0xC1
+          then
+            (if relaxed_utf8.val
+             then skip_tail ~ch ~i ~sz:2
+             else (ch, i, some & Bad_utf8 "head 0xC0..0xC1 (overlong)")
+            )
+          else if byte < 0xE0
+          then skip_tail ~ch ~i ~sz:2
+          else if byte < 0xF0
+          then skip_tail ~ch ~i ~sz:3
+          else if byte <= 0xF4
+          then skip_tail ~ch ~i ~sz:4
+          else (ch, i, some & Bad_utf8 "head 0xF5..0xFF")
+      and skip_tail ~ch ~sz ~i =  (* check len, then check_tail *)
+        if i + sz > sc_len
+        then (ch, i, None)
+        else
+          (if sz = 4 && not relaxed_utf8.val
+           then check_tail4  (* check for codepoint too *)
+           else check_tail ~len:(sz-1)
+          ) ~i ~ch ~ifrom:(i+1)
+      and check_tail ~i ~ch ~ifrom ~len =  (* just check for 0b10xxxxxx *)
+        if len = 0
+        then loop ~ch:(ch+1) ~i:ifrom
+        else
+          let byte = get ifrom in
+          if in_tail byte
+          then check_tail ~i ~ch ~ifrom:(ifrom+1) ~len:(len-1)
+          else (ch, i, bad_tail)
+      and check_tail4 ~i ~ch ~ifrom =  (* 0b10xxxxxx and codepoint *)
+        let a = get i and b = get (i+1) and c = get (i+2) and d = get (i+3) in
+        if not (in_tail b && in_tail c && in_tail d)
+        then
+          (ch, i, bad_tail)
+        else
+          let codepoint = decode_4bytes a b c d in
+          if codepoint > 0x10FFFF
+          then (ch, i, some & Bad_utf8 "codepoint > 0x10FFFF")
+          else loop ~ch:(ch+1) ~i:(ifrom+4)
+      in
+        loop ~ch:0 ~i:0
+    ;
+
+
+    value sc_recode ~scfrom ~arrto ~uchars =
+      let get i = Char.code (SC.get scfrom i) in
+      let rec loop ~ifrom ~ito =
+        if ito = uchars
+        then ()
+        else
+          let a = get ifrom in
+          if a < 0x80
+          then put ~i:(ifrom+1) ~ito ~char:a
+          else if a < 0xC0
+          then assert False  (* sc_ulen checks this *)
+          else
+          let b = get (ifrom+1) in
+          if a < 0xE0
+          then
+            put ~i:(ifrom+2) ~ito ~char:(
+              ((a land     0b11_111) lsl 6) lor
+              ( b land 0b00_111_111)
+            )
+          else
+          let c = get (ifrom+2) in
+          if a < 0xF0
+          then
+            put ~i:(ifrom+3) ~ito ~char:(
+              ((a land      0b1_111) lsl 12) lor
+              ((b land 0b00_111_111) lsl  6) lor
+              ( c land 0b00_111_111)
+            )
+          else
+          let d = get (ifrom+3) in
+          put ~i:(ifrom+4) ~ito ~char:(decode_4bytes a b c d)
+
+      and put ~i ~ito ~char =
+        ( arrto.(ito) := char
+        ; loop ~ifrom:i ~ito:(ito+1)
+        )
+      in
+        loop ~ifrom:0 ~ito:0
+    ;
+
+
+    value ensure_size array_option_ref size =
+      let realloc () =
+        let r = Array.make size (-1) in
+        ( array_option_ref.val := Some r
+        ; r
+        )
+      in
+      match array_option_ref.val with
+      [ None -> realloc ()
+      | Some array ->
+          if Array.length array < size
+          then realloc ()
+          else
+            (* for debugging: *)
+            let () = Array.fill array 0 (Array.length array) (-2) in
+            array
+      ]
+    ;
+
+    value utf8_of_char uit =
+      let arr_ref = ref None in
+      let rec utf8_of_char ~acc uit =
+        match uit with
+        [ IE_cont None k -> ie_cont & fun s -> step ~acc ~k s
+        | IE_cont (Some _) _ | IE_done _ -> return uit
+        ]
+      and step ~acc ~k stream =
+        let err oe =
+          k (EOF oe) >>% fun (iv, _s) ->
+          IO.return (return iv, stream)
+        in
+        match (acc, stream) with
+        [ (`Error e, _) ->
+            (* TODO: test this branch. *)
+            (* let () = Printf.eprintf "utf8: (`Error, _)\n%!" in *)
+            err & Some e
+        | (_, EOF oe) ->
+            (* mprintf "utf8: (_, `EOF None=%b)\n%!" (oe=None) >>% fun () -> *)
+            err oe
+        | (`Acc acc, Chunk c) ->
+            let sc = SC.make [acc; c] in
+            let (ulen_chars, ulen_bytes, error_opt) = sc_ulen sc in
+            let res_arr = ensure_size arr_ref ulen_chars in
+            let () = sc_recode ~scfrom:sc ~arrto:res_arr ~uchars:ulen_chars in
+            k (Chunk (S.of_array_sub res_arr 0 ulen_chars)) >>% fun (iv, _) ->
+            let acc' = match error_opt with
+              [ None -> `Acc (SC.sub_copy_out sc ~ofs:ulen_bytes
+                              ~len:(SC.length sc - ulen_bytes)
+                             )
+              | Some e -> `Error e
+              ]
+            in
+            IO.return (utf8_of_char ~acc:acc' iv, empty_stream)
+        ]
+      in
+        utf8_of_char ~acc:(`Acc S.empty) uit
+    ;
+
+  end;  (* `UTF8' functor *)
+
+
+
+(* [break_copy ~cpred ~outch] reads input just like [break ~cpred],
+   but writes the input it has read into output channel [outch].
+*)
+
+value break_copy ~cpred ~outch : iteratee char unit =
+  IE_cont None step
+  where rec step s =
+    match s with
+    [ EOF _ as e -> ie_doneM () e
+    | Chunk c ->
+        if S.is_empty c
+        then ie_contM step
+        else
+          let (matches, tail) = S.break cpred c in
+          let matches_str = S.to_string matches in
+          ( IO.write outch matches_str >>% fun () ->
+            if S.is_empty tail
+            then ie_contM step
+            else ie_doneM () (Chunk tail)
+          )
+    ]
+;
+
+
+(* [break_limit ~pred ~limit] reads at most [limit] elements that
+   don't satisfy predicate [pred], and returns when it either
+   found element that satisfy [pred], or when [limit] elements were
+   read and no satisfying element was found, or when there were an
+   EOF or error found and neither any satisfying element was found
+   nor [limit] elements was read.
+   Returns: tuple [(status, subarray)], where
+     [status = [= `Found | `Hit_limit | `Hit_eof ]]
+     and [subarray] contains all the elements read.
+   If the stream has exactly [limit] elements and no elements
+   found, [`Hit_limit] is returned (limit has more priority
+   than stream's end).
+*)
+
+value break_limit ~pred ~limit
+: iteratee 'a ([= `Found | `Hit_limit | `Hit_eof] * S.t 'a) =
+  IE_cont None (step ~sc:(SC.make [S.empty]) ~left:limit)
+  where rec step ~sc ~left s =
+    let ret status sc s =
+      ie_doneM (status, SC.sub_copy_out sc) s
+    in
+    if left = 0
+    then
+      ret `Hit_limit sc s
+    else
+      match s with
+      [ EOF _ -> ret `Hit_eof sc s
+      | Chunk c ->
+          match S.break_limit ~limit:left pred c with
+          [ `Found (prefix, rest) ->
+              ret `Found (SC.append sc prefix) (Chunk rest)
+              (* not copying here, since [ret->sub_copy_out] will copy *)
+          | `Hit_limit ->
+              let (prefix, rest) = S.split_at left c in
+              step ~sc:(SC.append sc prefix) ~left:0 (Chunk rest)
+              (* not copying here, since [step->ret->sub_copy_out] will copy *)
+          | `Hit_end ->
+              ie_contM &
+                step
+                  ~sc:(SC.append sc (S.copy c))
+                  ~left:(left - S.length c)
+          ]
+      ]
+;
+
+
+value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
+  let rec limit ~lim ~it =
+    let () = dbg "limit: lim=%i\n%!" lim in
+    match (lim, it) with
+    [ (_, (IE_done _ | IE_cont (Some _) _))
+      | (0, IE_cont None _) -> return it
+    | (lim, IE_cont None k) ->
+        ie_cont & step ~left:lim ~k
+    ]
+  and step ~left ~k s
+   : IO.m (iteratee 'el (iteratee 'el 'a) * stream 'el) =
+    match (s : stream 'el) with
+    [ EOF _ -> k s >>% fun (i, _) -> ie_doneM i s
+    | Chunk c ->
+        let len = S.length c in
+        let () = dbg "limit/step: len=%i\n%!" len in
+        if len <= left
+        then
+          k s >>% fun (it, s) ->
+          IO.return (limit ~lim:(left - len) ~it, s)
+        else
+          let (c1, c2) = S.split_at left c in
+          k (Chunk c1) >>% fun (it, s1') ->
+            let s' = Chunk (
+              match s1' with
+              [ Chunk c1' -> S.concat_splitted c1' c2
+              | EOF _ -> c2
+              ]) in
+            let () = dbg "limit: concated: %s\n%!" & dbgstream s' in
+            ie_doneM it s'
+    ]
+  in
+    limit ~lim ~it
+;
+
+
+value
+  (catchk : iteratee 'el 'a ->
+            ( err_msg ->
+              (stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el)) ->
+              iteratee 'el 'a
+            ) ->
+            iteratee 'el 'a
+  ) it handler =
+  let rec catchk it =
+    match it with
+    [ IE_done _ -> it
+    | IE_cont (Some e) k -> handler e k
+    | IE_cont None k -> ie_cont & step k
+    ]
+  and step k s =
+    k s >>% fun (it, s) -> IO.return (catchk it, s)
+  in
+    let () = dbg "catchk: entered\n%!" in
+    catchk it
+;
+
+
+value
+  (catch : iteratee 'el 'a ->
+           ( err_msg ->
+             iteratee 'el 'a
+           ) ->
+           iteratee 'el 'a
+  ) it handler =
+  catchk it (fun err_msg _cont -> handler err_msg)
+;
+
+
+
+
+value printf fmt =
+  Printf.ksprintf (fun s -> lift & IO.write IO.stdout s) fmt
 ;
 
 
