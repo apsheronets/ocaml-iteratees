@@ -1368,5 +1368,23 @@ value printf fmt =
 ;
 
 
+value gather_to_string : iteratee char string =
+  prepend
+    (fun () -> Buffer.create 50)
+    (fun buf ->
+       ie_cont step
+       where rec step s =
+         match s with
+         [ Chunk c ->
+             ( Subarray.buffer_add buf c ; ie_contM step )
+         | EOF None ->
+             ie_doneM (Buffer.contents buf) s
+         | EOF (Some e) ->
+             IO.error e
+         ]
+    )
+;
+
+
 end
 ;  (* `Make' functor *)
