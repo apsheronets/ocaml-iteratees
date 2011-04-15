@@ -471,13 +471,13 @@ value limited_iteratee : iteratee char int =
 
 value test_limit ~feed_cont n =
  let () = P.printf "test_limit: n=%i, feed_cont=%b\n%!" n feed_cont in
- let ctch ~b it =
+ let ctch ~b itf =
    if not b
    then
-     it
+     itf ()
    else
      catchk
-      it
+      itf
       (fun err_msg _cont ->
          let () = P.printf "limited: caught %s%!" &
            match err_msg with
@@ -490,7 +490,8 @@ value test_limit ~feed_cont n =
   let res = runA &
     (enum_pure_nchunk limit_chars 3)
     ( ctch ~b:True
-        ( (limit n limited_iteratee) >>= fun it ->
+        ( fun () ->
+          (limit n limited_iteratee) >>= fun it ->
           ( match it with
             [ IE_done i -> return & Some i
             | IE_cont None cont ->
@@ -535,7 +536,8 @@ value test_limit ~feed_cont n =
 (*
 
     ( ctch ~b:True
-        ( (joinI & limit n limited_iteratee) >>= fun i ->
+        ( fun () ->
+          (joinI & limit n limited_iteratee) >>= fun i ->
           break_chars (fun _ -> False) >>= fun str ->
           return (i, str)
         )

@@ -216,7 +216,9 @@ value (lift : IO.m 'a -> iteratee 'el 'a) m =
 (* Throw an irrecoverable error *)
 
 value rec throw_err e : iteratee 'el 'a =
-  IE_cont (Some e) (fun s -> IO.return (throw_err e, s))
+  IE_cont (Some e) (throw_err_cont e)
+and throw_err_cont e =
+  fun s -> IO.return (throw_err e, s)
 ;
 
 
@@ -1329,35 +1331,51 @@ value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
 
 
 value
-  (catchk : iteratee 'el 'a ->
+  (catchk : (unit -> iteratee 'el 'a) ->
             ( err_msg ->
               (stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el)) ->
               iteratee 'el 'a
             ) ->
             iteratee 'el 'a
-  ) it handler =
+  ) itf handler =
   let rec catchk it =
     match it with
     [ IE_done _ -> it
-    | IE_cont (Some e) k -> handler e k
-    | IE_cont None k -> ie_cont & step k
+    | IE_cont (Some e) k ->
+        try
+          handler e k
+        with
+        [ e -> throw_err e ]
+    | IE_cont None k -> ie_cont (step k)
     ]
   and step k s =
-    k s >>% fun (it, s) -> IO.return (catchk it, s)
+    (IO.catch
+       (fun () -> k s >>% fun r -> IO.return (`Ok r))
+       (fun e -> IO.return (`Error e))
+    ) >>% fun
+    [ `Ok (it, s') -> IO.return (catchk it, s')
+    | `Error e -> IO.return (catchk (throw_err e), s)
+    ]
   in
     let () = dbg "catchk: entered\n%!" in
-    catchk it
+    let it =
+      try
+        itf ()
+      with
+      [ e -> throw_err e ]
+    in
+      catchk it
 ;
 
 
 value
-  (catch : iteratee 'el 'a ->
+  (catch : (unit -> iteratee 'el 'a) ->
            ( err_msg ->
              iteratee 'el 'a
            ) ->
            iteratee 'el 'a
-  ) it handler =
-  catchk it (fun err_msg _cont -> handler err_msg)
+  ) itf handler =
+  catchk itf (fun err_msg _cont -> handler err_msg)
 ;
 
 
