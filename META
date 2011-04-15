@@ -1,5 +1,5 @@
 name="iteratees"
-version="0.1"
+version=""
 description="Iteratees (safe, practical, declarative input processing)"
 requires="unix, lwt, lwt.unix"
 archive(byte)="iteratees.cma"
