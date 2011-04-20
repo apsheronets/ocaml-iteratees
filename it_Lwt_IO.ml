@@ -17,6 +17,7 @@ module It_Lwt_IO
     type output_channel = Lwt_io.output_channel;
     value stdout : output_channel;
     value write : output_channel -> string -> m unit;
+    value flush : output_channel -> m unit;
 
     type input_channel = Lwt_io.input_channel;
     value open_in : string -> m input_channel;
@@ -98,6 +99,9 @@ module It_Lwt_IO
 
     value with_file_out_bin filename func =
       Lwt_io.with_file ~mode:Lwt_io.output filename func
+    ;
+
+    value flush = Lwt_io.flush
     ;
 
   end
