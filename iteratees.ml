@@ -125,6 +125,8 @@ module Make (IO : MonadIO)
 =
 struct
 
+module It_IO = IO;
+
 value ( >>% ) m f = IO.bind f m;
 
 (* +
