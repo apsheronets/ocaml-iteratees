@@ -34,10 +34,19 @@ open It_Ops
 open Dbg
 ;
 
-module S = Subarray
+open It_Types
 ;
 
-open It_Types
+module Make (IO : MonadIO)
+=
+struct
+
+module It_IO = IO;
+
+module Subarray = Subarray
+;
+
+module S = Subarray
 ;
 
 (* +
@@ -99,7 +108,7 @@ value ierr_of_merr (e : exn) : err_msg =
 
 type stream 'el =
   [ EOF of option err_msg
-  | Chunk of S.t 'el
+  | Chunk of Subarray.t 'el
   ]
 ;
 
@@ -119,13 +128,6 @@ value dbgstream s =
       (Array.length b.S.arr) b.S.ofs b.S.len
   ]
 ;
-
-
-module Make (IO : MonadIO)
-=
-struct
-
-module It_IO = IO;
 
 value ( >>% ) m f = IO.bind f m;
 
