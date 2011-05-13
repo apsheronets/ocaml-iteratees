@@ -38,6 +38,7 @@ module type MonadIO
     type m +'a;
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
+    value bind_rev : m 'a -> ('a -> m 'b) -> m 'b;
 
     value error : exn -> m 'a;
     value catch : (unit -> m 'a) -> (exn -> m 'a) -> m 'a;

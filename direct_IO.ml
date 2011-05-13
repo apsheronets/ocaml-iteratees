@@ -13,6 +13,7 @@ module Direct_IO
 
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
+    value bind_rev : m 'a -> ('a -> m 'b) -> m 'b;
     value catch : (unit -> m 'a) -> (exn -> m 'a) -> m 'a;
 
     value error : exn -> m 'a;
@@ -41,6 +42,7 @@ module Direct_IO
       ]
     ;
     value ( >>= ) m f = bind f m;
+    value bind_rev m f = bind f m;
 
     value catch f handler =
       match f () with

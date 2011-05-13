@@ -10,6 +10,7 @@ module It_Lwt_IO
 
     value return : 'a -> m 'a;
     value bind : ('a -> m 'b) -> m 'a -> m 'b;
+    value bind_rev : m 'a -> ('a -> m 'b) -> m 'b;
     value catch : (unit -> m 'a) -> (exn -> m 'a) -> m 'a;
 
     value error : exn -> m 'a;
@@ -36,6 +37,7 @@ module It_Lwt_IO
     type m +'a = Lwt.t 'a;
     value return = Lwt.return;
     value bind f m = Lwt.bind m f;
+    value bind_rev = Lwt.bind;
     value ( >>= ) = Lwt.bind;
 
     value catch = Lwt.catch;
