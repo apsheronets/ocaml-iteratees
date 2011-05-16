@@ -1439,5 +1439,20 @@ value gather_to_string : iteratee char string =
     end
   ;
 
+
+(* Feed Iteratee a piece of stream. Disregard the remaining stream
+   (the operation typically used by enumerators)
+*)
+
+value feedI
+  (k : stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el))
+  (str : stream 'el)
+ :
+  IO.m (iteratee 'el 'a)
+ =
+  k str >>% (IO.return % fst)
+;
+
+
 end
 ;  (* `Make' functor *)
