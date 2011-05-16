@@ -1407,6 +1407,37 @@ value gather_to_string : iteratee char string =
     )
 ;
 
+  module Ops
+   :
+    sig
+      (* IO binds: *)
+      value ( %<< ) : ('a -> It_IO.m 'b) -> It_IO.m 'a -> It_IO.m 'b;
+      value ( >>% ) : It_IO.m 'a -> ('a -> It_IO.m 'b) -> It_IO.m 'b;
+
+      (* Iteratees binds: *)
+      value ( =<< ) :
+        ('a -> iteratee 'el 'b) -> iteratee 'el 'a -> iteratee 'el 'b;
+      value ( >>= ) :
+        iteratee 'el 'a -> ('a -> iteratee 'el 'b) -> iteratee 'el 'b;
+
+      (* Enumerators sequence: *)
+      value ( >>> ) :
+        enumerator 'el 'a -> enumerator 'el 'a -> enumerator 'el 'a
+      ;
+
+    end
+   =
+    struct
+      value ( %<< ) = ( %<< );
+      value ( >>% ) = ( >>% );
+
+      value ( =<< ) = ( =<< );
+      value ( >>= ) = ( >>= );
+
+      (* Enumerators sequence: *)
+      value ( >>> ) = ( >>> );
+    end
+  ;
 
 end
 ;  (* `Make' functor *)
