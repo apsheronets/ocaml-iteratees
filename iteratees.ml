@@ -248,7 +248,7 @@ value (set_eof : stream 'el -> err_msg) s =
 
 (* Useful combinators for implementing iteratees and enumerators *)
 
-value empty_stream = Chunk S.empty
+value empty_stream = Chunk Subarray.empty
 ;
 
 
@@ -1267,7 +1267,7 @@ value break_copy ~cpred ~outch : iteratee char unit =
 *)
 
 value break_limit ~pred ~limit
-: iteratee 'a ([= `Found | `Hit_limit | `Hit_eof] * S.t 'a) =
+: iteratee 'a ([= `Found | `Hit_limit | `Hit_eof] * Subarray.t 'a) =
   IE_cont None (step ~sc:(SC.make [S.empty]) ~left:limit)
   where rec step ~sc ~left s =
     let ret status sc s =

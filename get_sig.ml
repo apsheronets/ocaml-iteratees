@@ -35,10 +35,10 @@ value replace_lines =
     , "        type m +'a;"
     )
   ; ( "          Iteratees.Make(It_IO).Subarray.t 'a == private"
-    , "          private"
+    , "          C.t 'a == private"
     )
   ; ( "          Iteratees.Make(It_IO).S.t 'a == private"
-    , "          private"
+    , "          Subarray.C.t 'a == private"
     )
   ; ( "      Iteratees.Make(It_IO).iteratee 'a 'b =="
     , ""
@@ -47,7 +47,7 @@ value replace_lines =
     , "        type uchar = private int;"
     )
   ; ( "              Iteratees.Make(It_IO).S.C.t 'a == private"
-    , "              private"
+    , "              Subarray.C.t 'a == private"
     )
   ; ( "              Iteratees.Make(It_IO).Subarray.C.t 'a == private"
     , "              private"
