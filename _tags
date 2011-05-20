@@ -5,3 +5,5 @@
 "iteratees.ml" : camlp4:no_quot
 
 <it_Lwt_IO.ml> | <tests_lwt.{byte,native}> : pkg_lwt, pkg_lwt.unix
+
+<get_sig.*> : pkg_unix
