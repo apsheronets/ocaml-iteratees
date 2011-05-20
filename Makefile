@@ -8,7 +8,7 @@ all :
 	   iteratees.cma iteratees.cmxa tests_lwt.byte tests_lwt.native \
 	   tests_direct.byte tests_direct.native \
 	   get_sig.byte
-	_build/get_sig.byte > _build/it_type.ml
+	-_build/get_sig.byte > _build/it_type.ml
 	# (cd _build && ocamlc -c -pp camlp4r it_type.ml)
 
 install : all
@@ -20,7 +20,8 @@ install : all
 	  _build/it_Lwt_IO.cmi _build/direct_IO.cmi \
 	  _build/iteratees_http.cmi \
 	  _build/it_misc.cmi _build/it_Ops.cmi _build/it_Types.cmi \
-	  _build/subarray_cat.cmi _build/subarray.cmi
+	  _build/subarray_cat.cmi _build/subarray.cmi \
+	  -optional _build/it_type.ml
 
 deinstall :
 	ocamlfind remove $(PKG)
