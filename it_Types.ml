@@ -53,6 +53,7 @@ module type MonadIO
     value read_into : input_channel -> string -> int -> int -> m int;
        (* in lwt: read_into ic buffer offset length *)
 
-    value runIO : m 'a -> res 'a;
+    value runIO : m 'a -> [= `Ok of 'a | `Error of exn ];
+
   end
 ;
