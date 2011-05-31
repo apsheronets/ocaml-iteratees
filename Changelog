@@ -1,0 +1,19 @@
+0.3
+	installing via findlib
+
+	I.UTF8.utf8_of_char: enumeratee for
+	char -> utf8 conversion
+
+	I.limit enumeratee to limit iteratee with the specified amount
+	of input elements
+
+	I.catch / I.catchk for catching errors (with optional recovery)
+
+	I.feedI -- ported from Oleg's code
+
+	generating it_type.ml with type of module made by Iteratees.Make(IO)
+	(for pre-3.12 OCaml versions, really ugly generation)
+
+0.1a
+	ported the code from http://okmij.org/ftp/Streams.html#iteratee
+	(IterateeM)
