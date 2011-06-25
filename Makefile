@@ -1,5 +1,5 @@
 PKG=iteratees
-VERSION=0.3
+VERSION=0.4
 
 TESTBIN=tests_lwt.byte
 

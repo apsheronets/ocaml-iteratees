@@ -1,3 +1,7 @@
+0.4 (upcoming)
+	I.itlist_anyresult_lasterror
+	 : list (iteratee 'el a') -> iteratee 'el 'a
+
 0.3
 	installing via findlib
 

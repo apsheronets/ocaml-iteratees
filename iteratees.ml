@@ -1454,5 +1454,101 @@ value feedI
 ;
 
 
+exception Itlist_empty;
+
+module Anyresult_lasterror
+ =
+  struct
+
+        value itlist_step_firstresult_lasterror
+          (lst : list (iteratee 'el 'a))
+          (s : stream 'el)
+         :
+          IO.m [= `First_result of (iteratee 'el 'a * stream 'el)
+               |  `Last_error of err_msg
+               |  `Cont of list (iteratee 'el 'a)
+               ]
+         =
+          let rec loop lasterropt acc lst =
+            match lst with
+            [ [] ->
+                if acc = []
+                then
+                  match lasterropt with
+                  [ None -> assert False
+                  | Some err -> IO.return & `Last_error err
+                  ]
+                else
+                  IO.return & `Cont (List.rev acc)
+            | [hd :: tl] ->
+                match hd with
+                [ (IE_done _) as it -> IO.return & `First_result (it, s)
+                | IE_cont ((Some _) as someerr) _ ->
+                    loop someerr acc tl
+                | IE_cont None k ->
+                    k s >>% fun
+                    [ (IE_done _, _) as r ->
+                        IO.return & `First_result r
+                    | (IE_cont (Some _ as someerr) _, _) ->
+                        loop someerr acc tl
+                    | ((IE_cont None _ as hd'), _s) ->
+                        loop lasterropt [hd' :: acc] tl
+                    ]
+                ]
+            ]
+          in
+            if lst = []
+            then IO.return & `Last_error Itlist_empty
+            else loop None [] lst
+        ;
+
+        value get_any_done lst =
+          loop lst
+          where rec loop lst =
+            match lst with
+            [ [ ((IE_done _) as x) :: _ ] -> Some x
+            | [] -> None
+            | [ (IE_cont _ _) :: _ ] -> loop lst
+            ]
+        ;
+
+        value itlist_anyresult_lasterror
+          (lst : list (iteratee 'el 'a))
+         :
+          iteratee 'el 'a
+         =
+          match get_any_done lst with
+          [ Some x -> x
+          | None -> ie_cont & step lst
+              where rec step lst s =
+                itlist_step_firstresult_lasterror lst s >>% fun
+                [ `First_result r -> IO.return r
+                | `Last_error e -> IO.error e
+                | `Cont [] -> assert False
+                | `Cont [it :: []] ->  IO.return (it, empty_stream)
+                | `Cont lst -> ie_contM & step lst
+                ]
+          ]
+        ;
+
+  end
+;
+
+(* +
+   [itlist_anyresult_lasterror it_lst] takes a list of iteratees,
+   passes input to all of them, and returns either the iteratee
+   that left alone (when others are failed with error), or
+   the last met error (when all iteratees have failed).
+   When the empty list is given, error [Itlist_empty] is returned.
+*)
+
+value itlist_anyresult_lasterror
+ :
+  list (iteratee 'el 'a) -> iteratee 'el 'a
+ =
+  Anyresult_lasterror.itlist_anyresult_lasterror
+;
+
+
 end
 ;  (* `Make' functor *)
