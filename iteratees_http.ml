@@ -7,7 +7,8 @@ open Dbg
 open It_Ops
 ;
 
-module It_http (IO : MonadIO) =
+module It_http (IO : MonadIO)
+ =
 struct
 
 open Iteratees

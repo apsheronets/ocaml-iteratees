@@ -4,6 +4,9 @@
 
 	I.junk ( = drop 1)
 
+	Reading integers with functions
+	I.read_[u]int{,32,64}[_nz]
+
 0.3
 	installing via findlib
 

@@ -22,9 +22,9 @@ value runIO = IO.runIO
 module P = Printf;
 value sprintf fmt = P.sprintf fmt;
 value () = P.printf "before functor app\n%!";
+
 module I = Make(IO);
 value () = P.printf "after functor app\n%!";
-
 open I;
 
 
@@ -103,9 +103,6 @@ value test3 () =
 module H = Iteratees_http.It_http(IO)
 ;
 
-open H
-;
-
 (* Pure tests, requiring no IO *)
 
 value test_str1 = expl &
@@ -114,8 +111,8 @@ value test_str1 = expl &
 ;
 
 value read_lines_and_one_more_line : iteratee 'a 'b =
-  joinI (enum_lines stream2list) >>= fun lines ->
-  line >>= fun after ->
+  joinI (H.enum_lines stream2list) >>= fun lines ->
+  H.line >>= fun after ->
   return (lines,after)
 ;
 
@@ -218,12 +215,12 @@ value () = exit 0;
 
 (* Test Fd driver *)
 
-value test_driver (line_collector : iteratee line 'a) filepath : IO.m unit
+value test_driver (line_collector : iteratee H.line 'a) filepath : IO.m unit
  =
   let read_lines_and_one_more_line : iteratee char 'y =
-    joinI (enum_lines line_collector) >>= fun lines ->
+    joinI (H.enum_lines line_collector) >>= fun lines ->
     is_stream_finished >>= fun e ->
-    line >>= fun after ->
+    H.line >>= fun after ->
     return ((lines, e), after)
   in
   mprintf "Opening file %S\n" filepath >>% fun () ->
@@ -253,7 +250,6 @@ value test_driver (line_collector : iteratee line 'a) filepath : IO.m unit
 value dev_null = if Sys.os_type = "Win32" then "NUL" else "/dev/null";
 
 
-
 value tests_driver () =
   let p i = ignore ((runIO & i) : res unit) in
   (
@@ -269,10 +265,10 @@ value tests_driver () =
     (* Incomplete headers [], EOF *)
   ; p & test_driver stream2list dev_null
 
-  ; p & test_driver print_lines "test-files/test1.txt"
-  ; p & test_driver print_lines "test-files/test2.txt"
-  ; p & test_driver print_lines "test-files/test3.txt"
-  ; p & test_driver print_lines dev_null
+  ; p & test_driver H.print_lines "test-files/test1.txt"
+  ; p & test_driver H.print_lines "test-files/test2.txt"
+  ; p & test_driver H.print_lines "test-files/test3.txt"
+  ; p & test_driver H.print_lines dev_null
   )
 ;
 
@@ -288,7 +284,7 @@ value tests_driver () =
 *)
 
 value line_printer : iteratee char unit =
-  joinI & enum_lines print_lines
+  joinI & H.enum_lines H.print_lines
 ;
 
 
@@ -299,7 +295,7 @@ value line_printer : iteratee char unit =
 *)
 
 value read_headers_print_body : iteratee char unit =
-  (with_err & joinI & enum_lines stream2list) >>= fun headers'err ->
+  (with_err & joinI & H.enum_lines stream2list) >>= fun headers'err ->
   (match headers'err with
    [ (headers, None) -> lift &
       mprintf "Complete headers\n" >>% fun () ->
@@ -310,7 +306,7 @@ value read_headers_print_body : iteratee char unit =
       print_headers headers
    ]) >>= fun () ->
    (lift%mprintf) "\nLines of the body follow:\n" >>= fun () ->
-   joinI & enum_chunk_decoded line_printer
+   joinI & H.enum_chunk_decoded line_printer
 ;
 
 
@@ -327,7 +323,7 @@ value print_headers_print_body () : iteratee 'a unit =
   (lift%mprintf) "\nLines of the headers follow:\n" >>= fun () ->
   line_printer >>= fun () ->
   (lift%mprintf) "\nLines of the body follow:\n" >>= fun () ->
-  joinI & enum_chunk_decoded line_printer
+  joinI & H.enum_chunk_decoded line_printer
 ;
 
 
@@ -555,6 +551,76 @@ value test_limits () =
 ;
 
 
+value enum1 s i =
+  match i with
+  [ I.IE_cont None k -> k s >>% IO.return % fst
+  | I.IE_cont (Some _) _ | I.IE_done _ -> IO.return i
+  ]
+;
+
+
+value rec printexc e =
+  match e with
+  [ I.Iteratees_err_msg e -> printexc e
+  | e -> Printexc.to_string e
+  ]
+;
+
+value test_int32 (reader : I.iteratee char int32) string =
+  let stream = I.Chunk (I.Subarray.of_string string) in
+  let () = Printf.printf "%S -> %!" string in
+  match IO.runIO ((enum1 stream reader) >>% I.run) with
+  [ `Ok r -> Printf.printf "ok %li\n%!" r
+  | `Error e -> Printf.printf "error \"%s\"\n%!"
+      (printexc e)
+  ]
+;
+
+
+value test_ints () =
+
+  let max_int = Int64.of_int32 Int32.max_int in
+  let pr = Printf.sprintf "%Li" in
+  let samples_u =
+    [ "0"
+    ; "00"
+    ; "123"
+    ; "+123"
+    ; "0123"
+    ; "-123"
+    ; pr max_int
+    ; "000000" ^ pr max_int
+    ; pr (Int64.add 1L max_int)
+    ; pr (Int64.add 2L max_int)
+    ; "19223372036854775806"
+    ]
+  in
+  let samples = List.concat
+    [ samples_u
+    ; List.map (fun s -> "-" ^ s) samples_u
+    ; List.map (fun s -> "+" ^ s) samples_u
+    ]
+  in
+    ( P.printf "reading unsigned int32 with leading zeroes allowed:\n"
+    ; List.iter (test_int32 read_uint32) samples
+    ; print_newline ()
+    ; P.printf "reading unsigned int32 with leading zeroes forbidden:\n"
+    ; List.iter (test_int32 read_uint32_nz) samples
+    ; print_newline ()
+
+    ; P.printf "reading signed int32 with leading zeroes allowed:\n"
+    ; List.iter (test_int32 read_int32) samples
+    ; print_newline ()
+    ; P.printf "reading signed int32 with leading zeroes forbidden:\n"
+    ; List.iter (test_int32 read_int32_nz) samples
+    ; print_newline ()
+    )
+;
+
+
+
+
+
 value () =
   ( P.printf "TESTS BEGIN.\n"
 
@@ -573,6 +639,8 @@ value () =
   ; test_utf8_enumeratee ()
 
   ; test_limits ()
+
+  ; test_ints ()
 
   ; P.printf "TESTS END.\n"
   );

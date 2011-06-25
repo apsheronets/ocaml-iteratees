@@ -67,7 +67,9 @@ module S = Subarray
 *)
 
 type err_msg = exn;
-exception EIO of (exn * place);
+
+(* exception EIO of (exn * place);  defined in It_Types *)
+
 exception Iteratees_err_msg of err_msg;
 
 
@@ -1557,6 +1559,405 @@ value itlist_anyresult_lasterror
 *)
 
 value junk = IE_cont None (fun s -> drop_step 1 s)
+;
+
+
+exception SInt_overflow;
+exception SInt_not_a_number of string;
+
+module Reading_ints
+ :
+  sig
+    value read_uint : iteratee char int;
+    value read_uint_nz : iteratee char int;
+    value read_int : iteratee char int;
+    value read_int_nz : iteratee char int;
+
+    value read_uint32 : iteratee char int32;
+    value read_uint32_nz : iteratee char int32;
+    value read_int32 : iteratee char int32;
+    value read_int32_nz : iteratee char int32;
+
+    value read_uint64 : iteratee char int64;
+    value read_uint64_nz : iteratee char int64;
+    value read_int64 : iteratee char int64;
+    value read_int64_nz : iteratee char int64;
+  end
+ =
+  struct
+
+(*
+    value ( & ) f x = f x;
+*)
+
+    module type SIGNED_INT
+     =
+      sig
+        type t;
+        value max_int : t;
+        (* min_int = -max_int - 1 *)
+
+        (* must work for small ints and small numbers:t : *)
+        value of_int : int -> t;
+        value to_int : t -> int;
+
+        (* may overflow silently: *)
+        value ( + ) : t -> t -> t;
+        value ( - ) : t -> t -> t;
+        value ( * ) : t -> t -> t;
+
+        (* should truncate towards zero: *)
+        value ( / ) : t -> t -> t;
+
+        value ( <? ) : t -> t -> bool;
+        value ( =? ) : t -> t -> bool;
+      end
+    ;
+
+    module SInt_T : SIGNED_INT with type t = int
+     =
+      struct
+        type t = int;
+        value max_int = Pervasives.max_int;
+        value of_int x = x;
+        value to_int x = x;
+        value ( + ) = Pervasives.( + );
+        value ( - ) = Pervasives.( - );
+        value ( * ) = Pervasives.( * );
+        value ( / ) = Pervasives.( / );
+        value ( <? ) = Pervasives.( < );
+        value ( =? ) = Pervasives.( == );
+      end
+    ;
+
+    module SInt32_T : SIGNED_INT with type t = int32
+     =
+      struct
+        type t = int32;
+        value max_int = Int32.max_int;
+        value of_int = Int32.of_int;
+        value to_int = Int32.to_int;
+        value ( + ) = Int32.add;
+        value ( - ) = Int32.sub;
+        value ( * ) = Int32.mul;
+        value ( / ) = Int32.div;
+        value ( <? ) a b = (Int32.compare a b) < 0;
+        value ( =? ) a b = (Int32.compare a b) = 0;
+      end
+    ;
+
+    module SInt64_T : SIGNED_INT with type t = int64
+     =
+      struct
+        type t = int64;
+        value max_int = Int64.max_int;
+        value of_int = Int64.of_int;
+        value to_int = Int64.to_int;
+        value ( + ) = Int64.add;
+        value ( - ) = Int64.sub;
+        value ( * ) = Int64.mul;
+        value ( / ) = Int64.div;
+        value ( <? ) a b = (Int64.compare a b) < 0;
+        value ( =? ) a b = (Int64.compare a b) = 0;
+      end
+    ;
+
+    module SInt_F (S : SIGNED_INT)
+     :
+      sig
+        (* value digits : S.t -> int; *)
+
+        value read_unsigned_gen : ~allow0:bool -> iteratee char S.t;
+        value read_signed_gen : ~allow0:bool -> iteratee char S.t;
+      end
+     =
+      struct
+        open S;
+
+        value zero = of_int 0
+        ;
+
+        value ( ~- ) n = zero - n
+          and ( >? ) a b = not (a <? b) && not (a =? b)
+          and ( >=? ) a b = not (a <? b)
+          and ( <>? ) a b = not (a =? b)
+        ;
+
+        value one = of_int 1
+        ;
+
+        value minus_one = (- one)
+        ;
+
+        value min_int = (- max_int) - one
+        ;
+
+        value ten = of_int 10
+        ;
+
+        value rec digits_count n =
+          Pervasives.( + )
+            1
+            (let n' = n / ten in
+             if n' =? zero
+             then 0
+             else digits_count n'
+            )
+        ;
+
+        value rem a b = (a - (a / b) * b)
+        ;
+
+        module P = Pervasives;
+
+        value string_reverse_inplace str = P.(
+          let len = String.length str in
+          let len1 = len - 1 in
+          let len2 = len / 2 - 1 in
+          ( for i = 0 to len2
+            do
+              let j = P.( - ) len1 i in
+              let tmp = str.[i] in
+              ( str.[i] := str.[j]
+              ; str.[j] := tmp
+              )
+            done
+          ; str
+          )
+        );
+
+        value min_int_digits = digits_count min_int;
+        value max_int_digits = digits_count max_int;
+
+        value to_base_abs b n =
+          let buf = Buffer.create max_int_digits in
+          let intb = to_int b in
+          let digit n =
+            let n = abs (to_int n) in
+            ( assert (n < intb)
+            ; assert (n < 10)
+            ; Char.chr (P.( + ) n (Char.code '0'))
+            ) in
+          let rec loop n =
+            let d = rem n b in
+            let c = digit d in
+            let () = Buffer.add_char buf c in
+            let n' = n / b in
+            if n' =? zero
+            then string_reverse_inplace (Buffer.contents buf)
+            else loop n'
+          in
+            loop n
+        ;
+
+        value to_dec_abs = to_base_abs ten
+        ;
+
+        value max_int_dec_abs = to_dec_abs max_int;
+
+        value min_int_dec_abs = to_dec_abs min_int;
+
+
+        value from_base_neg b ~maxstr str =
+          let len = String.length str in
+          let rec loop acc i =
+            if i = len
+            then acc
+            else
+              let digit ch =
+                if (ch >= '0' && ch <= '9')
+                then
+                  let d = of_int (P.( - ) (Char.code ch) (Char.code '0')) in
+                  if d >=? b
+                  then raise (SInt_not_a_number "")
+                  else d
+                else assert False
+              in
+              let ch = str.[i] in
+              let acc' = acc * b - digit ch in
+              loop acc' (P.( + ) i 1)
+          in
+            if len = 0
+            then `Empty
+            else
+            let maxlen = String.length maxstr in
+            if len > maxlen
+            then
+              (* let () = dbgn "(from_base: len>maxlen) %!" in *)
+              `Overflow
+            else if len = maxlen && str > maxstr
+            then
+              (* let () = dbgn "(from_base: str>maxstr: %S > %S) %!"
+                str maxstr
+              in *)
+              `Overflow
+            else
+              try
+                `Ok (loop zero 0)
+              with
+              [ SInt_not_a_number _ -> `Not_a_number ]
+        ;
+
+        value from_dec_neg ~maxstr = from_base_neg ~maxstr ten
+        ;
+
+        value is_digit c = (c <= '9' && c >= '0')
+        ;
+
+        value is_not_digit c = not (is_digit c)
+        ;
+
+        value inan msg = throw_err (SInt_not_a_number msg)
+        ;
+
+        value peek_digit =
+          peek >>= fun optc ->
+          return (
+            match optc with
+            [ Some c when is_digit c -> optc
+            | None | Some _ -> None
+            ]
+          )
+        ;
+
+        value read_gen
+          ~allow0
+          ~max_num_digits
+          ~maxstr
+          ~sign
+         :
+          iteratee char S.t
+         =
+          let rec read_beginning ~read0 =
+            peek_digit >>= fun optd ->
+            match optd with
+            [ None ->
+                if read0
+                then return (Some zero)
+                else inan "begins with not a digit"
+            | Some d ->
+                match (d, read0, allow0) with
+                [ ('0', _, True)
+                | ('0', False, False) ->
+                  junk >>= fun () ->
+                  read_beginning ~read0:True
+                | (_, True, False) -> inan "leading zeroes"
+                | (_, False, _) -> return None
+                | (_, True, True) -> return None
+                ]
+            ]
+          in
+          read_beginning ~read0:False >>= fun
+          [ Some r -> return r
+          | None ->
+               (limit max_num_digits &
+                break_chars is_not_digit
+               ) >>= fun it ->
+               joinI (return it) >>= fun res ->
+               peek_digit >>= fun optd ->
+               match (it, res, optd) with
+               [ (IE_done _, _, Some _) ->
+                   assert False
+                   (* limit should return IE_cont *)
+               | (IE_cont (Some _) _, _, _) ->
+                   assert False
+                   (* joinI should raise this error *)
+               | (IE_done str, _, None)
+               | (IE_cont None _, str, None) ->
+                   let () = assert
+                     (String.length str <= max_num_digits) in
+                   match from_dec_neg ~maxstr str with
+                   [ `Not_a_number -> assert False
+                   | `Empty -> assert False
+                   | `Ok r -> return (r * (-sign))
+                   | `Overflow -> throw_err SInt_overflow
+                   ]
+
+               | (IE_cont _ _, _, Some _) ->
+                   (* let () = dbgn "(read_gen: cont/digit) %!" in *)
+                   throw_err SInt_overflow
+               ]
+          ]
+        ;
+
+        value read_unsigned_gen ~allow0 =
+          read_gen
+            ~allow0
+            ~max_num_digits:max_int_digits
+            ~sign:one
+            ~maxstr:max_int_dec_abs
+        ;
+
+        value read_negative_gen ~allow0 =
+          read_gen
+            ~allow0
+            ~max_num_digits:min_int_digits
+            ~sign:minus_one
+            ~maxstr:min_int_dec_abs
+        ;
+
+        value read_signed_gen
+          ~allow0
+         :
+          iteratee char S.t
+         =
+          peek >>= fun
+          [ Some '-' -> junk >>= fun () -> read_negative_gen ~allow0
+          | Some '+' -> junk >>= fun () -> read_unsigned_gen ~allow0
+          | _ -> read_unsigned_gen ~allow0
+          ]
+        ;
+
+      end
+    ;
+
+    module SInt = SInt_F(SInt_T)
+    ;
+
+    module SInt32 = SInt_F(SInt32_T)
+    ;
+
+    module SInt64 = SInt_F(SInt64_T)
+    ;
+
+    value read_uint_nz = SInt.read_unsigned_gen ~allow0:False;
+    value read_uint = SInt.read_unsigned_gen ~allow0:True;
+    value read_int_nz = SInt.read_signed_gen ~allow0:False;
+    value read_int = SInt.read_signed_gen ~allow0:True;
+
+    value read_uint32_nz = SInt32.read_unsigned_gen ~allow0:False;
+    value read_uint32 = SInt32.read_unsigned_gen ~allow0:True;
+    value read_int32_nz = SInt32.read_signed_gen ~allow0:False;
+    value read_int32 = SInt32.read_signed_gen ~allow0:True;
+
+    value read_uint64_nz = SInt64.read_unsigned_gen ~allow0:False;
+    value read_uint64 = SInt64.read_unsigned_gen ~allow0:True;
+    value read_int64_nz = SInt64.read_signed_gen ~allow0:False;
+    value read_int64 = SInt64.read_signed_gen ~allow0:True;
+
+  end
+;
+
+(* +
+   Functions for reading decimal integers have names like
+   [read_uint32_nz].  The pattern for functions' names is:
+
+   read_[u]int{,32,64}[_nz]
+
+   - Optional "u" means "read unsigned int", without '+' or '-' as
+   the first char.
+   - Type of the int to read is "int", "int32" or "int64".
+   - "_nz" means "do not allow leading zeroes".  (note that "0" and "-0"
+     does not have leading zeroes).
+
+   The errors possible while reading ints are:
+   - [SInt_overflow] when integer does not fit the range
+   - [SInt_not_a_number (reason : string)] when the stream does not
+     have the integer you need: for example, when there is EOF,
+     not-a-digit char, any sign while you want to read unsigned integer,
+     or leading zero while you want to read integer without leading zeroes.
+*)
+include Reading_ints
 ;
 
 
