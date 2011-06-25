@@ -613,19 +613,21 @@ value (skip_till_eof : iteratee 'el unit) =
    This is the analogue of hs' List.drop
 *)
 
+value rec drop_step n s =
+  match s with
+  [ Chunk c ->
+      let len = c.S.len in
+      if len < n
+      then ie_contM (drop_step (n - len))
+      else ie_doneM () (Chunk (S.drop n c))
+  | EOF _ -> ie_doneM () s
+  ]
+;
+
 value (drop : int -> iteratee 'el unit) n =
   if n = 0
   then return ()
-  else IE_cont None (step n)
-    where rec step n s =
-      match s with
-      [ Chunk c ->
-          let len = c.S.len in
-          if len < n
-          then ie_contM (step (n - len))
-          else ie_doneM () (Chunk (S.drop n c))
-      | EOF _ -> ie_doneM () s
-      ]
+  else IE_cont None (drop_step n)
 ;
 
 
@@ -1548,6 +1550,15 @@ value itlist_anyresult_lasterror
  =
   Anyresult_lasterror.itlist_anyresult_lasterror
 ;
+
+
+(* +
+   [junk] = [drop 1]
+*)
+
+value junk = IE_cont None (fun s -> drop_step 1 s)
+;
+
 
 
 end

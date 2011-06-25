@@ -2,6 +2,8 @@
 	I.itlist_anyresult_lasterror
 	 : list (iteratee 'el a') -> iteratee 'el 'a
 
+	I.junk ( = drop 1)
+
 0.3
 	installing via findlib
 
