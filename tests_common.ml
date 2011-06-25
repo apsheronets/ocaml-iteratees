@@ -27,6 +27,21 @@ module I = Make(IO);
 value () = P.printf "after functor app\n%!";
 open I;
 
+value mprintf fmt =
+  Printf.ksprintf
+    (fun s ->
+       IO.catch
+         (fun () -> mprintf "%s" s)
+         (fun
+          [ Pure_IO.Pure "write" ->
+              ( Printf.printf "%s%!" s ; IO.return () )
+         | e -> IO.error e
+         ]
+         )
+    )
+    fmt
+;
+
 
 (* Primitive Tests *)
 
@@ -391,6 +406,16 @@ module U = I.UTF8;
 
 value (dump_utf8_chars : iteratee U.uchar unit) =
  let pr s = mprintf "dump_utf8_chars: %s\n" s in
+(*
+ let pr s = IO.catch
+   (fun () -> mprintf "dump_utf8_chars: %s\n" s)
+   (fun _ ->
+      ( Printf.printf "direct output: dump_utf8_chars: %s\n%!" s
+      ; IO.return ()
+      )
+   )
+ in
+*)
  ie_cont inner
  where rec inner s =
   match s with

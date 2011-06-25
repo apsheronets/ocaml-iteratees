@@ -2,11 +2,13 @@ PKG=iteratees
 VERSION=0.4
 
 TESTBIN=tests_lwt.byte
+#TESTBIN=tests_pure.byte
 
 all :
 	ocamlbuild \
 	   iteratees.cma iteratees.cmxa tests_lwt.byte tests_lwt.native \
 	   tests_direct.byte tests_direct.native \
+	   tests_pure.byte tests_pure.native \
 	   get_sig.byte
 	-_build/get_sig.byte > _build/it_type.ml
 	# (cd _build && ocamlc -c -pp camlp4r it_type.ml)

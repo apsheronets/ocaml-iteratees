@@ -7,6 +7,8 @@
 	Reading integers with functions
 	I.read_[u]int{,32,64}[_nz]
 
+	Pure_IO for pure computations
+
 0.3
 	installing via findlib
 
