@@ -22,7 +22,7 @@ install : all
 	  _build/it_Lwt_IO.cmi _build/direct_IO.cmi \
 	  _build/iteratees_http.cmi \
 	  _build/it_misc.cmi _build/it_Ops.cmi _build/it_Types.cmi \
-	  _build/subarray_cat.cmi _build/subarray.cmi \
+	  _build/subarray_cat.cmi _build/subarray.cmi _build/pure_IO.cmi \
 	  -optional _build/it_type.ml
 
 deinstall :
