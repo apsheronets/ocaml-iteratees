@@ -68,7 +68,7 @@ module S = Subarray
 
 type err_msg = exn;
 
-(* exception EIO of (exn * place);  defined in It_Types *)
+exception EIO = It_Types.EIO;
 
 exception Iteratees_err_msg of err_msg;
 
