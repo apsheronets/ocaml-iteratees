@@ -753,6 +753,58 @@ value (enum_pure_nchunk : list 'el -> int -> enumerator 'el 'a) lst n i =
 ;
 
 
+(* +
+   [enum_string ?chunk_size str] enumerates the string [str], using
+   the [chunk_size] elements array.
+*)
+
+value enum_string
+  ?(chunk_size=4096)
+  str
+ :
+  enumerator char 'a
+ =
+  let str_len = String.length str in
+  let arr_sz = min str_len chunk_size in
+  let arr = Array.make arr_sz '\x00' in
+  let fill_array ofs : int =
+    let ilen = min arr_sz (str_len - ofs) in
+    let imax = ilen - 1 in
+    ( for i = 0 to imax do
+        ( arr.(i) := str.[ofs + i]  (* todo: unsafe *)
+        )
+      done
+    ; ilen
+    )
+  in
+  inner 0
+  where rec inner ofs it =
+    match it with
+    [ IE_done _ | IE_cont (Some _) _ -> IO.return it
+    | IE_cont None k ->
+        let len = fill_array ofs in
+        if len = 0
+        then
+          IO.return it
+        else
+          k (Chunk (S.of_array_sub arr 0 len)) >>% fun (it, _s) ->
+          inner (ofs + len) it
+    ]
+;
+
+(*
+value test_enum_string : unit =
+ ignore (IO.runIO (
+  (enum_string ~chunk_size:3 "abcdefg" (break_chars (fun _ -> False)))
+  >>% fun it ->
+  (I.run it)
+  >>% fun res -> (failwith "res=%s" res ; IO.return ())
+ ))
+;
+*)
+
+
+
 value mprintf fmt = Printf.ksprintf (IO.write IO.stdout) fmt
 ;
 
@@ -1959,6 +2011,140 @@ module Reading_ints
 *)
 include Reading_ints
 ;
+
+
+module type NUM
+ =
+  sig
+    type num;
+    value num_of_int : int -> num;
+    value mult_num : num -> num -> num;
+
+    (* [power_num a b] = "a^b", b \in Z *)
+    value power_num : num -> num -> num;
+
+    (* should work for "big integers" at least: *)
+    value num_of_string : string -> num;
+  end
+;
+
+
+(* +
+   Create a module with functor [Reading_num(Num)] (the standard [Num]
+   is just fine), and read numbers with decimal fixed point representation,
+   like "1.23", "2.", ",123", "-00012.3".
+
+   Exception [ENum "reason"] is raised when it's impossible to read
+   a number from input.
+*)
+
+module Reading_num(Num : NUM)
+ :
+  sig
+    (* +
+       This function reads unsigned numbers without leading spaces.
+    *)
+    value num_fix_unsigned : iteratee char Num.num;
+
+    (* +
+       This function reads optionally signed numbers without leading spaces.
+    *)
+    value num_fix : iteratee char Num.num;
+
+    (* +
+       This is a convenience function for reading optionally signed numbers
+       with optional spaces in front of them.  Errors are reported with the
+       IO monad.
+    *)
+    value num_of_string_fix : string -> IO.m Num.num;
+  end
+ =
+  struct
+
+    value identity x = x
+    ;
+
+    exception ENum of string
+    ;
+
+    value num_err msg = throw_err (ENum msg)
+    ;
+
+    value is_decimal_point = fun [ '.' | ',' -> True | _ -> False ]
+    ;
+
+    value is_digit c = (c <= '9' && c >= '0')
+      and is_not_digit c = (c < '0' || c > '9')
+    ;
+
+    value num_fix_unsigned =
+      let ten = Num.num_of_int 10 in
+      break_chars is_not_digit
+      >>= fun before_point ->
+      peek
+      >>= fun optc ->
+      match optc with
+      [ Some c when is_decimal_point c ->
+          junk >>= fun () ->
+          return (String.make 1 c)
+      | _ ->
+          return ""
+      ]
+      >>= fun point ->
+      break_chars is_not_digit >>= fun after_point ->
+      if before_point = "" && after_point = ""
+      then
+        if point = ""
+        then
+          num_err "not a number (no digits, no decimal point)"
+        else
+          num_err & Printf.sprintf
+            "decimal number can't consist of %S only"
+            point
+      else
+        let scale = String.length after_point in
+        return &
+        Num.mult_num
+          (Num.num_of_string (before_point ^ after_point))
+          (Num.power_num ten (Num.num_of_int (-scale)))
+    ;
+
+
+    value num_fix =
+      let num_negate = fun n -> Num.mult_num (Num.num_of_int (-1)) n in
+
+      peek
+      >>= fun optc ->
+      match optc with
+      [ None -> num_err "EOF while reading number"
+      | Some '-' -> junk >>= fun () -> return num_negate
+      | Some '+' -> junk >>= fun () -> return identity
+      | _ -> return identity
+      ]
+      >>= fun make_sign ->
+      num_fix_unsigned >>= fun num_unsigned ->
+      return (make_sign num_unsigned)
+    ;
+
+    value is_whitespace = fun [ ' ' | '\t' -> True | _ -> False ]
+    ;
+
+    value num_of_string_fix str : IO.m Num.num =
+      (run %<< enum_string str
+        (drop_while is_whitespace >>= fun () ->
+         num_fix >>= fun r ->
+         peek >>= fun
+         [ None -> return r
+         | Some c -> num_err (Printf.sprintf
+             "garbage after number: char %C" c)
+         ]
+        )
+      )
+    ;
+
+  end
+;
+
 
 
 

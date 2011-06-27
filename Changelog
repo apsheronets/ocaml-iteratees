@@ -9,6 +9,12 @@
 
 	Pure_IO for pure computations
 
+	I.enum_string for enumerating strings in constant and adjustable
+	memory
+
+	I.Reading_num(Num) for reading arbitrary precision numbers
+	in decimal fixed point notation.
+
 0.3
 	installing via findlib
 
