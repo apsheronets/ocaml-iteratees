@@ -46,4 +46,4 @@ exception Pure of string
     value close_in () = pu "close_in";
     value read_into () (_:string) (_:int) (_:int) = pu "read_into";
 
-    value runIO x = x;
+    value runIO (x : m 'a) = (x :> [= `Ok of 'a | `Error of exn]);
