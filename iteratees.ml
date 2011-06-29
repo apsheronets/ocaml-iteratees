@@ -2104,9 +2104,15 @@ module Reading_num(Num : NUM)
       else
         let scale = String.length after_point in
         return &
-        Num.mult_num
-          (Num.num_of_string (before_point ^ after_point))
-          (Num.power_num ten (Num.num_of_int (-scale)))
+        let num = Num.num_of_string (before_point ^ after_point) in
+        if scale = 0
+        then num (* integers and rationals are represented differently,
+                    and I don't know whether [Num.mult_num n (1/10)^0]
+                    will keep [n] integer. *)
+        else
+          Num.mult_num
+            num
+            (Num.power_num ten (Num.num_of_int (-scale)))
     ;
 
 
