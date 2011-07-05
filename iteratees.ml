@@ -1045,10 +1045,6 @@ value (sequence_stream : iteratee 'elo 'eli -> enumeratee 'elo 'eli 'a) fi i =
 ;
 
 
-value is_space c = (c = '\x20' || c = '\x09' || c = '\x0D' || c = '\x0A')
-;
-
-
 (* Convert the stream of characters to the stream of words, and
    apply the given iteratee to enumerate the latter.
    Words are delimited by white space.
@@ -1057,11 +1053,12 @@ value is_space c = (c = '\x20' || c = '\x09' || c = '\x0D' || c = '\x0A')
 *)
 
 value rec (enum_words : enumeratee char string 'a) i =
+  let is_space c = (c = '\x20' || c = '\x09' || c = '\x0D' || c = '\x0A') in
   match i with
   [ IE_cont None k ->
       drop_while is_space >>= fun () ->
       break_chars is_space >>= fun w ->
-let () = dbg "enum_words: %S\n" w in
+      (* let () = dbg "enum_words: %S\n" w in *)
       if w = ""
       then return i  (* finished *)
       else
