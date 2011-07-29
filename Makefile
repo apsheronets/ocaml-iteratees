@@ -37,3 +37,6 @@ reinstall :
 
 tests : all
 	_build/$(TESTBIN)
+
+clean :
+	sh ./clean.sh
