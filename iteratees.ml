@@ -823,36 +823,50 @@ value (_munres : res 'a -> IO.m 'a) r =
 ;
 
 
+value enum_readchars
+ : ! 'ch .
+   ~buffer_size:int ->
+   ~read_func:('ch -> string -> int (*ofs*) -> int (*len*) -> IO.m int) ->
+   'ch ->
+   enumerator char 'a
+ = fun ~buffer_size ~read_func inch i ->
+     let buf_str = String.create buffer_size
+     and buf_arr = Array.make buffer_size '\x00' in
+     let rec loop k =
+       mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
+       match read_res with
+       [ `Error e ->
+           k (EOF (some & ierr_of_merr e)) >>% IO.return % fst
+       | `Ok have_read ->
+           mprintf "Read buffer, size %i\n" have_read >>% fun () ->
+           let () = assert (have_read >= 0) in
+           if have_read = 0
+           then
+             IO.return (ie_cont k)
+           else
+             let c = S.replace_with_substring buf_arr buf_str 0 have_read in
+             k (Chunk c) >>% check % fst
+       ]
+     and check i =
+       match i with
+       [ IE_cont None k -> loop k
+       | IE_cont (Some _) _ | IE_done _ -> IO.return i
+       ]
+     in
+       check i
+;
+
+
+
 (* The enumerator of M's channels
    We use the same buffer all throughout enumeration
 *)
 
-value (enum_fd : IO.input_channel -> enumerator char 'a) inch i =
-  let buffer_size = enum_fd_buffer_size.val in
-  let buf_str = String.create buffer_size
-  and buf_arr = Array.make buffer_size '\x00' in
-  let rec loop k =
-    mres (IO.read_into inch buf_str 0 buffer_size) >>% fun read_res ->
-    match read_res with
-    [ `Error e ->
-        k (EOF (some & ierr_of_merr e)) >>% IO.return % fst
-    | `Ok have_read ->
-        mprintf "Read buffer, size %i\n" have_read >>% fun () ->
-        let () = assert (have_read >= 0) in
-        if have_read = 0
-        then
-          IO.return (ie_cont k)
-        else
-          let c = S.replace_with_substring buf_arr buf_str 0 have_read in
-          k (Chunk c) >>% check % fst
-    ]
-  and check i =
-    match i with
-    [ IE_cont None k -> loop k
-    | IE_cont (Some _) _ | IE_done _ -> IO.return i
-    ]
-  in
-    check i
+value (enum_fd : IO.input_channel -> enumerator char 'a) inch =
+  enum_readchars
+    ~buffer_size:enum_fd_buffer_size.val
+    ~read_func:IO.read_into
+    inch
 ;
 
 
