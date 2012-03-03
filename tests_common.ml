@@ -643,6 +643,52 @@ value test_ints () =
 ;
 
 
+value test_base64decode () =
+  let cases =
+    [ ("QWxhZGRpbjpvcGVuIHNlc2FtZQ==", "Aladdin:open sesame")
+    ]
+  and chunk_sizes = [1; 2; 3; 4; 5; 6; 10; 20; 100]
+  and any_fail = ref False
+  in
+  let () =
+    List.iter
+      (fun chunk_size ->
+         List.iter
+           (fun (encoded, expected_decoded) ->
+             let status =
+             match IO.runIO
+             (
+              (enum_string ~chunk_size encoded)
+              (I.base64_decode gather_to_string) >>% fun it ->
+              I.run (joinI it)
+             )
+             with
+             [ `Ok r ->
+                 if expected_decoded = r
+                 then `Ok
+                 else `Error
+                   (Printf.sprintf "doesn't match: expected %S, got %S"
+                        expected_decoded r)
+             | `Error e -> `Error (Printf.sprintf "error: %S" (printexc e))
+             ]
+             in
+               match status with
+               [ `Ok -> ()
+               | `Error reason ->
+                   ( any_fail.val := True
+                   ; Printf.printf "(chunk %i) %S -> %s\n%!"
+                       chunk_size encoded reason
+                   )
+               ]
+           )
+           cases
+      )
+      chunk_sizes
+  in
+    if any_fail.val
+    then ()
+    else Printf.printf "base64_decode tests ok\n%!"
+;
 
 
 
@@ -666,6 +712,8 @@ value () =
   ; test_limits ()
 
   ; test_ints ()
+
+  ; test_base64decode ()
 
   ; P.printf "TESTS END.\n"
   );

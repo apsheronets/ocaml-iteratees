@@ -2163,6 +2163,175 @@ module Reading_num(Num : NUM)
 
 
 
+module Base64
+ =
+  struct
+
+    (* the logic is stolen from OCaml library "cryptokit" version 1.5 *)
+
+    value base64_conv_table =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    exception Bad_encoding;
+
+    value base64_decode_char c =
+      match c with
+      [ 'A' .. 'Z' -> (Char.code c) - 65
+      | 'a' .. 'z' -> ((Char.code c) - 97) + 26
+      | '0' .. '9' -> ((Char.code c) - 48) + 52
+      | '+' -> 62
+      | '/' -> 63
+      | ' ' | '\t' | '\n' | '\r' -> (-1)
+      | '=' -> (-2)
+      | _ -> (-3)
+      ]
+    ;
+
+    value base64_decode_piece ~ibuf ~arr_to ~arr_ofs =
+      ( arr_to.(arr_ofs) :=
+          Char.chr ((ibuf.(0) lsl 2) + (ibuf.(1) lsr 4))
+      ; arr_to.(arr_ofs + 1) :=
+          Char.chr (((ibuf.(1) land 15) lsl 4) + (ibuf.(2) lsr 2))
+      ; arr_to.(arr_ofs + 2) :=
+          Char.chr (((ibuf.(2) land 3) lsl 6) + ibuf.(3))
+      )
+    ;
+
+    value base64_decode ~s_from ~arr_to ~ibuf ~ipos =
+      let s_len = S.length s_from in
+      inner 0 0
+      where rec inner s_ofs arr_ofs =
+        if s_ofs = s_len
+        then (arr_ofs, False, False)
+        else
+          match base64_decode_char (S.get s_from s_ofs) with
+          [ (-1) -> inner (s_ofs + 1) arr_ofs
+          | (-2) -> (arr_ofs, True, False)
+          | (-3) -> (arr_ofs, False, True)
+          | n ->
+              ( ibuf.(ipos.val) := n
+              ; incr ipos
+              ; if ipos.val = 4
+                then
+                  ( base64_decode_piece ~ibuf ~arr_to ~arr_ofs
+                  ; ipos.val := 0
+                  ; Array.fill ibuf 0 4 0
+                  ; inner (s_ofs + 1) (arr_ofs + 3) 
+                  )
+                else
+                  inner (s_ofs + 1) arr_ofs
+              )
+          ]
+    ;
+
+    value base64_decode_last ~arr_to ~ibuf ~ipos_val (* : (written, error) *) =
+      match ipos_val with
+      [ 0 ->
+          (0, False)
+      | 1 ->
+          (0, True)
+      | 2 ->
+          ( arr_to.(0) :=
+              Char.chr ((ibuf.(0) lsl 2) + (ibuf.(1) lsr 4))
+          ; (1, False)
+          )
+      | 3 ->
+          ( arr_to.(0) :=
+              Char.chr ((ibuf.(0) lsl 2) + (ibuf.(1) lsr 4))
+          ; arr_to.(1) :=
+              Char.chr (((ibuf.(1) land 15) lsl 4) + (ibuf.(2) lsr 2))
+          ; (2, False)
+          )
+      | _ ->
+          assert False
+      ]
+    ;
+
+
+    (* from litpro; to merge *)
+    value enee_cont
+     = fun it step ->
+      match it with
+      [ IE_cont None k ->
+          is_stream_finished >>= fun is_fin ->
+          match is_fin with
+          [ None -> step k
+          | Some _ -> return it
+          ]
+      | IE_cont (Some _) _ | IE_done _ -> return it
+      ]
+    ;
+
+    value enee_cont_io
+     = fun it step ->
+      match it with
+      [ IE_cont None k ->
+          step k
+      | IE_cont (Some _) _ | IE_done _ -> ie_doneM it (Chunk S.empty)
+      ]
+    ;
+
+    value rec enee_base64_decode
+     : iteratee char 'a -> iteratee char (iteratee char 'a)
+     = fun it ->
+         enee_cont it & fun k -> ie_cont & step 
+           (Array.make 4 0) (ref 0) (ref [| |]) k
+
+    and step ibuf ipos obuf k =
+      fun s ->
+        match s with
+        [ EOF opt_err -> finish ~opt_err ~ibuf ~ipos ~obuf k
+        | Chunk s_from ->
+            let max_out_size = ((S.length s_from) / 4 + 2) * 3 in
+            let arr_to = array_ensure_size ~default:'\x00' obuf max_out_size in
+            let (written, finished, error) =
+              base64_decode ~s_from ~arr_to ~ibuf ~ipos in
+            pass_obuf ~written ~arr_to k >>% fun it ->
+            enee_cont_io it & fun k ->
+            if error
+            then
+              ret k ~opt_err:(Some Bad_encoding)
+            else
+              if finished
+              then
+                finish ~obuf ~opt_err:None ~ibuf ~ipos k
+              else
+                ie_contM (step ibuf ipos obuf k)
+        ]
+
+    and finish ~obuf ~ibuf ~ipos ~opt_err k =
+      let arr_to = array_ensure_size ~default:'\x00' obuf 3 in
+      let (written, error) =
+        base64_decode_last ~arr_to ~ibuf ~ipos_val:ipos.val in
+      pass_obuf ~written ~arr_to k >>% fun it ->
+      enee_cont_io it & fun k ->
+      ret k ~opt_err:
+        (match opt_err with
+         [ Some _ -> opt_err
+         | None -> if error then Some Bad_encoding else None
+         ])
+
+    and pass_obuf ~written ~arr_to k =
+      if written > 0
+      then
+        let osub = S.of_array_sub arr_to 0 written in
+          feedI k (Chunk osub)
+      else
+         IO.return (ie_cont k)
+
+    and ret ~opt_err k =
+      k (EOF opt_err) >>% fun (it, s) -> ie_doneM it s
+    ;
+
+  end
+;
+
+
+value base64_decode = Base64.enee_base64_decode
+;
+
+
+
 
 end
 ;  (* `Make' functor *)
