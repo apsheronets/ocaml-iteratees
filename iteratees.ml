@@ -1085,6 +1085,21 @@ value rec (enum_words : enumeratee char string 'a) i =
 ;
 
 
+value array_ensure_size ~default array_ref size =
+  let realloc () =
+    let r = Array.make size default in
+    ( array_ref.val := r
+    ; r
+    )
+  in
+  let array = array_ref.val in
+  if Array.length array < size
+  then realloc ()
+  else array
+;
+
+
+
 module SC = Subarray_cat
 ;
 
@@ -1099,6 +1114,9 @@ module UTF8
     type uchar = int;
 
     exception Bad_utf8 of string
+    ;
+
+    value ensure_size = array_ensure_size ~default:(-1)
     ;
 
 (*  without actual conversion:
@@ -1233,27 +1251,8 @@ module UTF8
     ;
 
 
-    value ensure_size array_option_ref size =
-      let realloc () =
-        let r = Array.make size (-1) in
-        ( array_option_ref.val := Some r
-        ; r
-        )
-      in
-      match array_option_ref.val with
-      [ None -> realloc ()
-      | Some array ->
-          if Array.length array < size
-          then realloc ()
-          else
-            (* for debugging: *)
-            let () = Array.fill array 0 (Array.length array) (-2) in
-            array
-      ]
-    ;
-
     value utf8_of_char uit =
-      let arr_ref = ref None in
+      let arr_ref = ref [| |] in
       let rec utf8_of_char ~acc uit =
         match uit with
         [ IE_cont None k -> ie_cont & fun s -> step ~acc ~k s
