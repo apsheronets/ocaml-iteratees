@@ -953,14 +953,24 @@ type enumeratee 'elo 'eli 'a =
    This behavior is intended: `take' reinforces fixed-length frame boundaries.
 *)
 
-value (take : int -> enumeratee 'el 'el 'a) n i =
+(*+
+  Extended to be able to fail early when inner iteratee fails
+  (so, no "frame boundaries"), this behaviour is achieved by passing
+  [`Fail] as first argument.  Pass [`Drop] for original [take].
+*)
+
+value (take_gen : [= `Drop | `Fail ] -> int -> enumeratee 'el 'el 'a)
+onerr n i =
   let rec take n i =
     if n = 0
     then return i
     else
-      match i with
-      [ IE_cont None k -> ie_cont (step n k)
-      | IE_cont (Some _) _ | IE_done _ -> drop n >>= fun () -> return i
+      match (i, onerr) with
+      [ (IE_cont None k, _) -> ie_cont (step n k)
+      | (IE_cont (Some _) _, `Drop) | (IE_done _, _) ->
+          drop n >>= fun () -> return i
+      | (IE_cont (Some _) _, `Fail) ->
+          return i
       ]
   and step n k s =
     match s with
@@ -982,6 +992,18 @@ value (take : int -> enumeratee 'el 'el 'a) n i =
   in
     take n i
 ;
+
+(*+
+  Original [take]
+*)
+value take n i = take_gen `Drop n i;
+
+(*+
+  [take_or_fail] returns inner iteratee's error as early as possible,
+  doesn't respecting frame boundaries.  This is useful when inner
+  iteratee's error is fatal for the whole task.
+*)
+value take_or_fail n i = take_gen `Fail n i;
 
 
 (* Map the stream: yet another Enumeratee
