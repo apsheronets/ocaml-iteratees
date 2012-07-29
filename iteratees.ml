@@ -2353,7 +2353,281 @@ value base64_decode = Base64.enee_base64_decode
 ;
 
 
+module Deque_chunks
+ =
+  struct
+
+
+
+value break_subsequence
+ : (S.t 'el -> int -> IO.m (iteratee 'el 'a * stream 'el)) ->
+   iteratee 'el 'b ->
+   iteratee 'el (option 'a * iteratee 'el 'b)
+ = fun it_subseq_step it_proc_until ->
+
+
+очередь = deque of (ofs * chunk), где последний чанк не скопирован
+          (т.е. добавление чанка в конец вызывает сначала копирование
+          предыдущего чанка) -- можем рассчитывать только на нескопированность
+          последнего чанка.
+          копирование будет однократным, так как из хвоста чанки не берутся,
+          а только добавляются туда.
+
+break_subsequence : берёт очередь
+    если it_proc_until кончил -- возвращаем его и склеенную очередь
+    иначе -- loop_q с очередью
+
+loop_q : берёт очередь
+    если очередь:
+    - пустая -- step0
+    - непустая -- берём голову, вызываем loop_index
+
+step0 :
+    запрашиваем чанк, loop_index с первым чанком, смещением=0 и пустым хвостом
+
+loop_index : берёт первый чанк, начальное смещение, хвост очереди
+    пытаемся последовательно по всем смещениям применить it_subseq_step:
+    - когда дошли до конца чанка,
+      - Кормить
+      - идём дальше: break_subsequence по хвосту (там же оно выйдет,
+        если итерат кончил)
+      (проверка на конец должна быть в начале, так как step1 может дать ofs=len)
+    - пока ошибка, идём по чанку к следующему смещению.
+    - когда не ошибка, а "хочу ещё" от it_subseq_step --
+      - Кормить
+        - если после кормления есть результат от it_proc_until -- возвращаем
+          его, склеиваем
+          остаток после кормления и хвост очереди, возвращаем всё
+        - если нет результата --
+          - очередь формируем доклеиванием спереди текущего смещения и текущего
+            чанка к хвосту очереди
+          - очередь и продолжение от it_subseq_step передаём в step1
+    - когда результат от it_subseq_step -- Кормить, возвращаем его и результат
+      от it_subseq_step (если кормёжка оставила кусок чанка, игнорируем)
+    где:
+    Кормить =
+      кормим it_proc_until куском текущего чанка от начального до текущего
+      смещения, имеющихся в значениях loop_index
+
+step1 : берёт продолжение it_subseq_step и очередь
+тут: очередь непуста
+    запрашиваем чанк
+    1. доклеиваем в зад очереди (должно скопировать предыдущий чанк)
+    2. пытаемся его применить к продолжению it_subseq_step
+       - если ошибка -- loop_index со следующего смещения в первом чанке
+         очереди (может дать ofs=len)
+       - если результат -- возвращаем остаток потока, нетронутый it_subseq_step,
+         результат it_subseq_step и текущее состояние it_proc_until
+       - если "хочу ещё" -- step1
+
+
+
+
+       let rec break_subsequence ~q ~it_proc_until =
+         match it_proc_until with
+         [ IE_done _ | IE_cont (Some _) _ ->
+             return (None, it_proc_until)
+         | IE_cont None k ->
+             ie_cont & step ~q ~it_proc_until ~k
+         ]
+
+       and step ~q ~it_proc_until ~k s =
+         match s with
+         [ EOF _ -> ie_doneM (None, it_proc_until) s
+         | Chunk arr ->
+
+             let rec loop_q q =
+               if Deque.is_empty q
+               then
+                 ie_contM & break_subsequence ~q ~it_proc_until
+               else
+                 let (arr, ofs) = Deque.head q
+                 and qtail = Deque.tail q in
+                 match loop_index arr ofs ~qtail with
+                 [ None -> ie_cont & step ~q ~k ~it_proc_until
+                 | Some ofs ->
+                     let (will_feed, will_leave) = S.split_by ofs arr in
+                     feedI k will_feed >>% fun it_proc_until ->
+                     let q =
+                       if S.is_empty will_leave
+                       then qtail
+                       else Deque.cons will_leave qtail
+                     in
+                     loop_q q
+                 ]
+
+             and loop_index arr ofs ~qtail =
+               if ofs = S.length arr
+               then Some ofs
+               else
+                 match try_index arr ofs ~qtail with
+                 а вот тут может прийти привет -- итерат
+                 скушал всё и надо вернуть в том числе
+                 остаток, склеенный из rest + qtail
+                 .
+
+             and try_index_step arr ofs ~qtail ~it_subseq_step =
+               (it_subseq_step arr ofs) >>% fun (it_sub, s) ->
+               match it_sub with
+               [ IE_done a ->
+                   ie_doneM (Some a, it_proc_until) (s +++ qtail)
+               | IE_cont (Some _) _ ->
+                   try_next arr ~new_ofs:(ofs + 1) ~qtail
+               .
+
+             and try_index ~qtail ~it_sub = .
+
+
+value iter_stream_list : list (stream 'el) ->
+  IO.m (iteratee 'el 'a * list (stream 'el)
+.
+
+value concat_stream_list : list (stream 'el) -> stream 'el
+.
+
+
+из loop_index возвращать смещение, до которого можно кормить данными
+вложенный итерат.  Там будет либо это смещение по итогу, либо запрос
+"хочу ещё данных", без вариантов.
+
+
+
+             and try_next ~new_ofs arr ~qtail =
+               if new_ofs = S.length arr
+               then Deque.tail qtail ...
+               else try_index ~ofs:new_ofs ~qtail arr
+
+             in
+               let q = Deque.snoc (arr, 0) q in
+               loop_q q
+         ]
+
+     (ignore (it_subseq_step (raise Exit) (raise Exit)); ignore it_proc_until; raise Exit)
+
+;
+
+
+value rec ie_errorM e s = IO.return (IE_cont (Some e) (ie_errorM_cont e), s)
+  and ie_errorM_cont e = fun s -> ie_errorM e s
+;
+
+
+value proc_inside_boundary boundary it_proc : iteratee char unit =
+  (break_subsequence
+     (fun arr ofs ->
+       let rec cmp arr ~ofs ~i =
+         if i = String.length boundary
+         then `Yes ofs
+         else
+           let len = S.length arr in
+           if i + ofs = len
+           then `Maybe i
+           else
+             if S.get arr ofs = boundary.[i]
+             then cmp arr ~ofs:(ofs + 1) ~i:(i + 1)
+             else `No
+       in
+       let rec it_loop arr ~ofs ~i : IO.m (iteratee char unit * stream char) =
+         match cmp arr ~ofs ~i with
+         [ `Yes ofs -> ie_doneM () (Chunk (snd (S.split_at ofs arr)))
+         | `No -> ie_errorM Not_found empty_stream
+         | `Maybe i ->
+             ie_contM & fun s ->
+             match s with
+             [ EOF eopt ->
+                 ie_errorM
+                   (match eopt with [ None -> End_of_file | Some e -> e ])
+                   s
+             | Chunk arr -> it_loop arr ~ofs:0 ~i
+             ]
+         ]
+       in
+         it_loop arr ~ofs ~i:0
+     )
+     it_proc
+  ) >>= fun ((), it_proc) ->
+  (lift & run it_proc) >>= return
+;
+
+
+
+
+(**********
+
+exception Form of string;
+
+value form_error fmt = Printf.ksprintf (fun s -> throw_err (Form s)) fmt
+;
+
+value it_proc_form
+ : string ->
+   iteratee char 'a ->
+   iteratee 'a 'r ->
+   iteratee char 'r
+ = fun boundary it_part it_fold ->
+
+     let read_line =
+       break_chars ( (=) '\r' ) >>= fun line ->
+       let ret () = return line in
+       peek >>= fun exp_cr_opt ->
+       match exp_cr_opt with
+       [ None -> ret ()
+       | Some exp_cr ->
+           let () = assert (exp_cr = '\r') in
+           peek >>= fun exp_lf_opt ->
+           match exp_lf_opt with
+           [ None -> ret ()
+           | Some exp_lf ->
+               junk >>= fun () ->
+               match exp_lf with
+               [ '\n' -> junk >>= ret
+               | c -> form_error "bad line ending: expected %c, found %c"
+                   '\n' c
+               ]
+           ]
+       ]
+     in
+
+     let read_part_headers =
+       let inner acc =
+         read_line >>= fun line ->
+         if line = ""
+         then return & List.rev acc
+         else inner [line :: acc]
+       in
+         inner []
+     in
+
+     (?alt?
+        match_boundary
+        fail if no boundary
+     ) >>= fun () ->
+     after_boundary >>= fun ab ->
+     match ab with
+     [ `Finished -> finish it_fold
+     | `Next ->
+         read_part_headers >>= fun part_headers ->
+
+
+
+;
+***************)
+
 
 
 end
 ;  (* `Make' functor *)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
