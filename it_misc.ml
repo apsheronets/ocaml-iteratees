@@ -247,7 +247,7 @@ module UTF8(IO : It_Types.MonadIO)
       and step ~acc ~k stream =
         let err oe =
           k (EOF oe) >>% fun (iv, _s) ->
-          IO.return (return iv, stream)
+          IO.return (return iv, Sl.one stream)
         in
         match (acc, stream) with
         [ (`Error e, _) ->
@@ -270,7 +270,7 @@ module UTF8(IO : It_Types.MonadIO)
               | Some e -> `Error e
               ]
             in
-            IO.return (utf8_of_char ~acc:acc' iv, empty_stream)
+            IO.return (utf8_of_char ~acc:acc' iv, Sl.empty)
         ]
       in
         utf8_of_char ~acc:(`Acc S.empty) uit
