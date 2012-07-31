@@ -145,6 +145,49 @@ value ( >>% ) m f = IO.bind f m;
 value ( %<< ) = IO.bind;
 
 
+module Sl
+ :
+  sig
+    type sl 'el;
+    value empty : sl 'el;
+    value destr_head : sl 'el -> option (stream 'el * sl 'el);
+    value cons : stream 'el -> sl 'el -> sl 'el;
+    value get_one_opt : sl 'el -> option (stream 'el);
+    value one : stream 'el -> sl 'el;
+  end
+ =
+  struct
+    type sl 'el = list (stream 'el);
+    value empty = [];
+    value destr_head = fun
+      [ [] -> None
+      | [h :: t] -> Some (h, t)
+      ]
+    ;
+    value cons h t =
+      match h with
+      [ EOF _ ->
+          let () = assert (t = []) in
+          [h (* :: t *)]
+      | Chunk c ->
+          if S.is_empty c
+          then t
+          else [h :: t]
+      ]
+    ;
+    value get_one_opt = fun
+      [ [] -> None
+      | [h] -> Some h
+      | _ -> assert False
+      ];
+    value one s = cons s [];
+  end
+;
+
+type sl 'el = Sl.sl 'el
+;
+
+
 (* Iteratee -- a generic stream processor, what is being folded over
    a stream
    This is the monadic version of Iteratee from Iteratee.hs
@@ -172,10 +215,18 @@ value ( %<< ) = IO.bind;
    are computed).
 *)
 
+(* +
+   Some applications (look-ahead) require more complex type to store the
+   rest of stream, especially when Chunk and EOF are already passed to
+   iteratee and they should be processed without loosing part of stream or
+   breaking iteratee's laws.
+   So it will be the list of streams.
+*)
+
 type iteratee 'el 'a =
   [ IE_done of 'a
   | IE_cont of option err_msg
-            and (stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el))
+            and (stream 'el -> IO.m (iteratee 'el 'a  *  sl 'el))
   ]
 ;
 
@@ -191,17 +242,34 @@ value rec
 f it =
   match it with
   [ IE_done a -> f a
-  | IE_cont e k ->
+  | IE_cont e k_a ->
       IE_cont e
         (fun s ->
-           k s >>% fun
-           [ (IE_done a, stream) ->
+           k_a s >>% fun
+           [ (IE_done a, sl) ->
                match f a with
-               [ IE_cont None m -> m stream
+               [ (IE_cont None k_b) as it_b ->
+                   loop_stream it_b k_b sl
+                   where rec loop_stream it_b k_b sl =
+                     match Sl.destr_head sl with
+                     [ None -> IO.return (it_b, Sl.empty)
+                     | Some (sl_h, sl_t) ->
+                         k_b sl_h >>% fun (it_b, sl_h) ->
+                         match it_b with
+                         [ IE_done _ | IE_cont (Some _) _ ->
+                             let sl = match Sl.get_one_opt sl_h with
+                             [ None -> sl_t
+                             | Some sl_h_h -> Sl.cons sl_h_h sl_t
+                             ] in
+                             IO.return (it_b, sl)
+                         | IE_cont None k_b ->
+                             loop_stream it_b k_b sl_t
+                         ]
+                     ]
                | (IE_cont (Some _) _ | IE_done _) as i ->
-                   IO.return (i, stream)
+                   IO.return (i, sl)
                ]
-           | (((IE_cont _) as i), s) -> IO.return (bindI f i, s)
+           | (((IE_cont _) as i), sl) -> IO.return (bindI f i, sl)
            ]
         )
   ]
@@ -215,7 +283,7 @@ value ( >>= ) m f = bindI f m
 
 
 value (lift : IO.m 'a -> iteratee 'el 'a) m =
-  IE_cont None (fun s -> m >>% fun x -> IO.return (return x, s))
+  IE_cont None (fun s -> m >>% fun x -> IO.return (return x, Sl.one s))
 ;
 
 
@@ -224,7 +292,7 @@ value (lift : IO.m 'a -> iteratee 'el 'a) m =
 value rec throw_err e : iteratee 'el 'a =
   IE_cont (Some e) (throw_err_cont e)
 and throw_err_cont e =
-  fun s -> IO.return (throw_err e, s)
+  fun s -> IO.return (throw_err e, Sl.one s)
 ;
 
 
@@ -263,11 +331,15 @@ value empty_stream = Chunk Subarray.empty
 *)
 
 value
-  ( ie_doneM : 'a -> stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el) )
-  x s = IO.return (IE_done x, s)
+  ( ie_doneM : 'a -> stream 'el -> IO.m (iteratee 'el 'a  *  sl 'el) )
+  x s = IO.return (IE_done x, Sl.one s)
 ;
 
-value ie_contM k = IO.return (IE_cont None k, empty_stream)
+value ie_contM k = IO.return (IE_cont None k, Sl.empty)
+;
+
+
+value ie_doneMsl x sl = IO.return (IE_done x, sl)
 ;
 
 
@@ -278,7 +350,7 @@ value ie_contM k = IO.return (IE_cont None k, empty_stream)
    should be used instead.
 *)
 
-value (ie_cont : (stream 'el -> IO.m (iteratee 'el 'a * stream 'el)) ->
+value (ie_cont : (stream 'el -> IO.m (iteratee 'el 'a * sl 'el)) ->
                  iteratee 'el 'a)
 cont =
   IE_cont None cont
@@ -290,7 +362,7 @@ value (liftI : IO.m (iteratee 'el 'a) -> iteratee 'el 'a) m =
   where run' s i =
     match i with
     [ IE_cont None k -> k s
-    | IE_cont (Some _) _ | IE_done _ -> IO.return (i, s)
+    | IE_cont (Some _) _ | IE_done _ -> IO.return (i, Sl.one s)
     ]
 ;
 
@@ -335,7 +407,7 @@ outer_iter =
   | IE_cont (Some e) _ -> throw_err e
   | IE_cont None inner_k ->
       ie_cont & fun outer_stream ->
-      (inner_k (EOF None)) >>% fun (inner_iter2, _el'_stream) ->
+      (inner_k (EOF None)) >>% fun (inner_iter2, _el'_sl) ->
       match inner_iter2 with
       [ IE_done inner_result -> ie_doneM inner_result outer_stream
       | IE_cont opt_err _inner_k2 ->
@@ -559,7 +631,7 @@ value (head : iteratee 'el 'el) =
         [ None -> ie_contM step
         | Some (h, t) -> ie_doneM h (Chunk t)
         ]
-    | EOF _ -> IO.return (IE_cont (Some (set_eof s)) step, s)
+    | EOF _ -> IO.return (IE_cont (Some (set_eof s)) step, Sl.one s)
     ]
 ;
 
@@ -982,11 +1054,11 @@ onerr n i =
           if len < n
           then
             k s >>% fun (i, _) ->
-            IO.return (take (n - len) i, empty_stream)
+            IO.return (take (n - len) i, Sl.empty)
           else
-            let (s1, s2) = S.split_at n c in
-            k (Chunk s1) >>% fun (i, _) ->
-            ie_doneM i (Chunk s2)
+            let (c1, c2) = S.split_at n c in
+            k (Chunk c1) >>% fun (i, _) ->
+            ie_doneM i (Chunk c2)
     | EOF _ -> k s >>% fun (i, _) -> ie_doneM i s
     ]
   in
@@ -1042,7 +1114,7 @@ value (map_stream : ('elo -> 'eli) -> enumeratee 'elo 'eli 'a) f i =
         then ie_contM (step k)
         else
           k (Chunk (S.map f c)) >>% fun (iv, _) ->
-          IO.return (map_stream iv, empty_stream)
+          IO.return (map_stream iv, Sl.empty)
     | EOF _ ->
         ie_doneM (ie_cont k) s
     ]
@@ -1283,7 +1355,7 @@ module UTF8
       and step ~acc ~k stream =
         let err oe =
           k (EOF oe) >>% fun (iv, _s) ->
-          IO.return (return iv, stream)
+          IO.return (return iv, Sl.one stream)
         in
         match (acc, stream) with
         [ (`Error e, _) ->
@@ -1306,7 +1378,7 @@ module UTF8
               | Some e -> `Error e
               ]
             in
-            IO.return (utf8_of_char ~acc:acc' iv, empty_stream)
+            IO.return (utf8_of_char ~acc:acc' iv, Sl.empty)
         ]
       in
         utf8_of_char ~acc:(`Acc S.empty) uit
@@ -1396,7 +1468,7 @@ value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
         ie_cont & step ~left:lim ~k
     ]
   and step ~left ~k s
-   : IO.m (iteratee 'el (iteratee 'el 'a) * stream 'el) =
+   : IO.m (iteratee 'el (iteratee 'el 'a) * sl 'el) =
     match (s : stream 'el) with
     [ EOF _ -> k s >>% fun (i, _) -> ie_doneM i s
     | Chunk c ->
@@ -1409,12 +1481,14 @@ value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
         else
           let (c1, c2) = S.split_at left c in
           k (Chunk c1) >>% fun (it, s1') ->
-            let s' = Chunk (
-              match s1' with
-              [ Chunk c1' -> S.concat_splitted c1' c2
-              | EOF _ -> c2
-              ]) in
+            let s' = 
+              match Sl.get_one_opt s1' with
+              [ Some (Chunk c1') -> (Chunk (S.concat_splitted c1' c2))
+              | None | Some (EOF _) -> (Chunk c2)
+              ] in
+            (*
             let () = dbg "limit: concated: %s\n%!" & dbgstream s' in
+            *)
             ie_doneM it s'
     ]
   in
@@ -1425,7 +1499,7 @@ value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
 value
   (catchk : (unit -> iteratee 'el 'a) ->
             ( err_msg ->
-              (stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el)) ->
+              (stream 'el -> IO.m (iteratee 'el 'a  *  sl 'el)) ->
               iteratee 'el 'a
             ) ->
             iteratee 'el 'a
@@ -1446,7 +1520,7 @@ value
        (fun e -> IO.return (`Error e))
     ) >>% fun
     [ `Ok (it, s') -> IO.return (catchk it, s')
-    | `Error e -> IO.return (catchk (throw_err e), s)
+    | `Error e -> IO.return (catchk (throw_err e), Sl.one s)
     ]
   in
     let () = dbg "catchk: entered\n%!" in
@@ -1533,7 +1607,7 @@ value gather_to_string : iteratee char string =
 *)
 
 value feedI
-  (k : stream 'el -> IO.m (iteratee 'el 'a  *  stream 'el))
+  (k : stream 'el -> IO.m (iteratee 'el 'a  *  sl 'el))
   (str : stream 'el)
  :
   IO.m (iteratee 'el 'a)
@@ -1552,7 +1626,7 @@ module Anyresult_lasterror
           (lst : list (iteratee 'el 'a))
           (s : stream 'el)
          :
-          IO.m [= `First_result of (iteratee 'el 'a * stream 'el)
+          IO.m [= `First_result of (iteratee 'el 'a * sl 'el)
                |  `Last_error of err_msg
                |  `Cont of list (iteratee 'el 'a)
                ]
@@ -1570,7 +1644,7 @@ module Anyresult_lasterror
                   IO.return & `Cont (List.rev acc)
             | [hd :: tl] ->
                 match hd with
-                [ (IE_done _) as it -> IO.return & `First_result (it, s)
+                [ (IE_done _) as it -> IO.return & `First_result (it, Sl.one s)
                 | IE_cont ((Some _) as someerr) _ ->
                     loop someerr acc tl
                 | IE_cont None k ->
@@ -1613,7 +1687,7 @@ module Anyresult_lasterror
                 [ `First_result r -> IO.return r
                 | `Last_error e -> IO.error e
                 | `Cont [] -> assert False
-                | `Cont [it :: []] ->  IO.return (it, empty_stream)
+                | `Cont [it :: []] ->  IO.return (it, Sl.empty)
                 | `Cont lst -> ie_contM & step lst
                 ]
           ]
@@ -2342,7 +2416,7 @@ module Base64
          IO.return (ie_cont k)
 
     and ret ~opt_err k =
-      k (EOF opt_err) >>% fun (it, s) -> ie_doneM it s
+      k (EOF opt_err) >>% fun (it, sl) -> ie_doneMsl it sl
     ;
 
   end

@@ -205,7 +205,7 @@ value (enum_chunk_decoded : enumeratee char char 'a) iter =
   *)
   and frame_err e iter =
     throw_recoverable_err (exc "Frame error")
-    (fun s -> enum_err e iter >>% fun i -> IO.return (return i, s))
+    (fun s -> enum_err e iter >>% fun i -> IO.return (return i, Sl.one s))
   in
     enum_chunk_decoded iter
 ;

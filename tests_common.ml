@@ -427,7 +427,7 @@ value (dump_utf8_chars : iteratee U.uchar unit) =
       >>% fun () ->
       match opt_err with
       [ None -> ie_doneM () s
-      | Some e -> IO.return & (throw_err e, s)
+      | Some e -> IO.return & (throw_err e, Sl.one s)
       ]
   | Chunk c ->
       pr
