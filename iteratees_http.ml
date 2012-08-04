@@ -177,7 +177,8 @@ value (enum_chunk_decoded : enumeratee char char 'a) iter =
         match read_hex str with
         [ None -> frame_err (exc ("Bad chunk size: " ^ str)) iter
         | Some size ->
-            let () = dbg "enum_chunk_decoded: frame %i (%x) bytes\n" size size in
+            let () = dbg
+              "enum_chunk_decoded: frame %i (%x) bytes\n" size size in
             getCRLF iter (
             take size iter >>= fun r ->
             getCRLF r (
@@ -209,5 +210,184 @@ value (enum_chunk_decoded : enumeratee char char 'a) iter =
   in
     enum_chunk_decoded iter
 ;
+
+
+
+exception Multipart_error of string;
+
+value multipart_error fmt =
+  Printf.ksprintf (fun s -> throw_err (Multipart_error s)) fmt
+;
+
+value it_multipart
+ : string ->
+   (list string -> iteratee char 'a) ->
+   iteratee 'a 'r ->
+   iteratee char 'r
+ = fun (type a) (type r) boundary it_part (it_fold : iteratee a r) ->
+
+     let read_line =
+       break_chars ( (=) '\r' ) >>= fun line ->
+       let ret () = return line in
+       peek >>= fun exp_cr_opt ->
+       match exp_cr_opt with
+       [ None -> ret ()
+       | Some exp_cr ->
+           let () = assert (exp_cr = '\r') in
+           junk >>= fun () ->
+           peek >>= fun exp_lf_opt ->
+           match exp_lf_opt with
+           [ None -> ret ()
+           | Some exp_lf ->
+               junk >>= fun () ->
+               match exp_lf with
+               [ '\n' -> ret ()
+               | c -> multipart_error "bad line ending: expected %C, found %C"
+                   '\n' c
+               ]
+           ]
+       ]
+     in
+
+     let read_part_headers =
+       let rec inner acc =
+         read_line >>= fun line ->
+         let () = fdbg "read_part_headers: line = %S" line in
+         if line = ""
+         then return & List.rev acc
+         else inner [line :: acc]
+       in
+         inner []
+     in
+
+     let after_boundary =
+       head >>= fun c1 ->
+       head >>= fun c2 ->
+       match (c1, c2) with
+       [ ('-', '-') ->
+           head >>= fun c3 ->
+           head >>= fun c4 ->
+           match (c3, c4) with
+           [ ('\r', '\n') -> return `Finished
+           | _ -> multipart_error "after closing boundary: expected CR LF, \
+                              found %C %C"
+                             c3 c4
+           ]
+       | ('\r', '\n') -> return `Next
+       | _ -> multipart_error
+                "after boundary: expected either CR LF or \"--\", \
+                 found %C %C"
+                c1 c2
+       ]
+     in
+
+     let crlf_boundary = "\r\n" ^ boundary in
+
+     let proc_of_it_fold it_fold =
+       match it_fold with
+       [ IE_done _ | IE_cont (Some _) _ -> `Skip
+       | IE_cont None _ -> `Proc
+       ]
+     in
+
+     let fdbg_stream_char title =
+       ie_cont
+         (fun s ->
+            let () =
+            fdbg "stream: %s: %s" title (dbgstream_char ~body:10 s)
+            in
+            ie_doneM () s
+         )
+     in
+
+     let rec loop_boundaries (it_fold : iteratee a r) =
+       let () = fdbg "loop" in
+       fdbg_stream_char "before loop" >>= fun () ->
+       after_boundary >>= fun ab ->
+       match ab with
+       [ `Finished ->
+           let () = fdbg "  `Finished" in
+           fdbg_stream_char "after finished" >>= fun () ->
+           it_ignore (* must ignore, RFC 2046 *) >>= fun () ->
+           map_ready & feed_it it_fold (EOF None)
+       | `Next ->
+           let () = fdbg "  `Next" in
+           read_part_headers >>= fun part_headers ->
+           let proc = proc_of_it_fold it_fold in
+           break_subsequence
+             (probe_string crlf_boundary)
+             (match proc with
+              [ `Proc ->
+                  let () = fdbg "will read this part with it_part" in
+                  (it_part part_headers) >>= fun p ->
+                  let () = fdbg "it_part ok" in
+                  return & Some p
+              | `Skip ->
+                  let () = fdbg "will skip this part" in
+                  it_ignore >>= fun () ->
+                  let () = fdbg "part was skipped" in
+                  return None
+              ]
+             )
+           >>= fun (opt_boundary, opt_it_part) ->
+           fdbg_stream_char "after it_part" >>= fun () ->
+           match opt_boundary with
+           [ None ->
+               (* если границу не нашли *)
+               (* если opt_it_part = None -- не собирали результаты,
+                  значит даём it_fold'у multipart_error, вылетаем.
+                  если Some -- итерату it_part уже дали EOF в break_sequence,
+                  деинит сделан, значит даём .. см выше ..
+                *)
+               let err_msg = Multipart_error "expected boundary, found EOF" in
+               map_ready & feed_it it_fold (EOF (Some err_msg))
+           | Some () ->
+               (* если границу нашли (и прочитали) *)
+
+               eof_to_res opt_it_part None >>= fun res_part ->
+
+               match res_part with
+               [ `Ok None ->
+                   loop_boundaries it_fold
+               | `Ok (Some p) ->
+                   let it_fold = feed_it it_fold (chunk_of p) in
+                   loop_boundaries it_fold
+               | `Error e ->
+                   (* часть собрать не смогли по вине it_proc --
+                      передаём ошибку в it_fold и допринять части *)
+                   loop_boundaries & feed_it it_fold (EOF (Some e))
+               ]
+           ]
+       ]
+     in
+
+     let rec search_for_beginning () =
+       break_subsequence
+         (probe_string boundary)
+         (it_last 2)
+       >>= fun (opt_boundary, it_last2) ->
+       match opt_boundary with
+       [ None ->
+           let () = fdbg "sfb: None" in
+           map_ready & feed_it it_fold (EOF None)
+       | Some () ->
+           let () = fdbg "sfb: Some" in
+           eof_to_res it_last2 None >>= fun res_last2 ->
+           match res_last2 with
+           [ `Ok ([] | ['\r'; '\n']) ->
+               let () = fdbg "sfb: found good prefix" in
+               loop_boundaries it_fold
+           | `Ok _ ->
+               let () = fdbg "sfb: found bad prefix" in
+               fdbg_stream_char "sfb/bad" >>= fun () ->
+               search_for_beginning ()
+           | `Error _ ->
+               throw_err (Failure "unexpected error from it_last 2")
+           ]
+       ]
+     in
+       search_for_beginning ()
+;
+
 
 end;

@@ -94,6 +94,13 @@ value fold dir func init s =
           ~cur:(func cur s.arr.(i))
 ;
 
+value iter
+ : ('a -> unit) -> t 'a -> unit
+ = fun f s ->
+     fold L (fun () x -> let () = f x in ()) () s
+;
+
+
 value to_list s =
   fold R
     (fun acc elem -> [elem :: acc])

@@ -691,6 +691,115 @@ value test_base64decode () =
 ;
 
 
+(***********)
+
+exception Left of (exn * string)
+;
+
+
+value dump_after title =
+   get_stream_eof >>= fun opt_opt_err ->
+   let () = fdbg "after %s: %s"
+     title
+     (match opt_opt_err with
+      [ None -> "some data"
+      | Some None -> "usual EOF"
+      | Some (Some e) ->
+          Printf.sprintf "error: %s"
+            (Printexc.to_string e)
+      ]
+     )
+   in
+     return ()
+;
+
+
+value test_forms () =
+  let test1 =
+( "qwe\r\n-----------------------------7045176531256545735900303621\
+\r\nContent-Disposition: form-data; name=\"MAX_FILE_SIZE\"\r\n\r\n100000\r\n\
+-----------------------------7045176531256545735900303621\r\nContent-Disposit\
+ion: form-data; name=\"uploadedfile\"; filename=\"allchars\"\r\nContent-Type: \
+application/octet-stream\r\n\r\n\
+\x00\x01\x02\x03\x04\x05\x06\x07\b\t\n\x0B\x0C\r\x0E\x0F\x10\x11\x12\x13\x14\
+\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F !\"#$%&'()*+,-./0123456789:;<=>?\
+@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7F\x80\x81\
+\x82\x83\x84\x85\x86\x87\x88\x89\x8A\x8B\x8C\x8D\x8E\x8F\x90\x91\x92\x93\x94\
+\x95\x96\x97\x98\x99\x9A\x9B\x9C\x9D\x9E\x9F\xA0\xA1\xA2\xA3\xA4\xA5\xA6\xA7\
+\xA8\xA9\xAA\xAB\xAC\xAD\xAE\xAF\xB0\xB1\xB2\xB3\xB4\xB5\xB6\xB7\xB8\xB9\xBA\
+\xBB\xBC\xBD\xBE\xBF\xC0\xC1\xC2\xC3\xC4\xC5\xC6\xC7\xC8\xC9\xCA\xCB\xCC\xCD\
+\xCE\xCF\xD0\xD1\xD2\xD3\xD4\xD5\xD6\xD7\xD8\xD9\xDA\xDB\xDC\xDD\xDE\xDF\xE0\
+\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF\xF0\xF1\xF2\xF3\
+\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF\
+\r\n-----------------------------7045176531256545735900303621--\r\n\
+qwe"
+, "-----------------------------7045176531256545735900303621"
+, [ ( [ "Content-Disposition: form-data; name=\"MAX_FILE_SIZE\""
+      ]
+    , "100000"
+    )
+  ; ( [ "Content-Disposition: form-data; name=\"uploadedfile\"; file\
+         name=\"allchars\""
+      ; "Content-Type: application/octet-stream"
+      ]
+    , "\
+\x00\x01\x02\x03\x04\x05\x06\x07\b\t\n\x0B\x0C\r\x0E\x0F\x10\x11\x12\x13\x14\
+\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F !\"#$%&'()*+,-./0123456789:;<=>?\
+@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7F\x80\x81\
+\x82\x83\x84\x85\x86\x87\x88\x89\x8A\x8B\x8C\x8D\x8E\x8F\x90\x91\x92\x93\x94\
+\x95\x96\x97\x98\x99\x9A\x9B\x9C\x9D\x9E\x9F\xA0\xA1\xA2\xA3\xA4\xA5\xA6\xA7\
+\xA8\xA9\xAA\xAB\xAC\xAD\xAE\xAF\xB0\xB1\xB2\xB3\xB4\xB5\xB6\xB7\xB8\xB9\xBA\
+\xBB\xBC\xBD\xBE\xBF\xC0\xC1\xC2\xC3\xC4\xC5\xC6\xC7\xC8\xC9\xCA\xCB\xCC\xCD\
+\xCE\xCF\xD0\xD1\xD2\xD3\xD4\xD5\xD6\xD7\xD8\xD9\xDA\xDB\xDC\xDD\xDE\xDF\xE0\
+\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF\xF0\xF1\xF2\xF3\
+\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF\
+"
+    )
+  ]
+)
+  in
+    List.iter
+      (fun (body, boundary, expected) ->
+         match IO.runIO
+         ((enum_string
+             body
+             (     (H.it_multipart boundary
+                      (fun headers ->
+                         let () = fdbg "getting part" in
+                         gather_to_string >>= fun part ->
+                         (* let () = fdbg "got part: %S" part in *)
+                         dump_after "part" >>= fun () ->
+                         return (headers, part)
+                      )
+                      (stream2list >>= fun lst ->
+                       dump_after "all parts" >>= fun () ->
+                       return lst
+                      )
+                   )
+             )
+          ) >>% run
+         )
+         with
+         [ `Ok got ->
+             if expected <> got
+             then failwith "test failed"
+             else Printf.printf "test passed\n%!"
+         | `Error e ->
+             Printf.eprintf "forms: test failed with exception: %s" (msg e)
+             where rec msg e =
+               match e with
+               [ Left (e, s) ->
+                   sprintf "%s (stream left: %S)"
+                     (msg e) s
+               | H.Multipart_error s -> s
+               | Iteratees_err_msg e -> msg e
+               | e -> Printexc.to_string e
+               ]
+         ]
+      )
+      [test1]
+;
+
 
 value () =
   ( P.printf "TESTS BEGIN.\n"
@@ -714,6 +823,8 @@ value () =
   ; test_ints ()
 
   ; test_base64decode ()
+
+  ; test_forms ()
 
   ; P.printf "TESTS END.\n"
   );
