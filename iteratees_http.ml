@@ -219,6 +219,10 @@ value multipart_error fmt =
   Printf.ksprintf (fun s -> throw_err (Multipart_error s)) fmt
 ;
 
+value multipart_max_header_size = ref 1024
+  and multipart_max_headers_count = ref 10
+;
+
 value it_multipart
  : string ->
    (list string -> iteratee char 'a) ->
@@ -250,14 +254,26 @@ value it_multipart
      in
 
      let read_part_headers =
-       let rec inner acc =
-         read_line >>= fun line ->
-         let () = fdbg "read_part_headers: line = %S" line in
-         if line = ""
-         then return & List.rev acc
-         else inner [line :: acc]
+       let rec inner count acc =
+         if count > multipart_max_headers_count.val
+         then
+           multipart_error "too many multipart headers (more than %i)"
+             multipart_max_headers_count.val
+         else
+           limit multipart_max_header_size.val read_line >>= fun it_line ->
+           match it_line with
+           [ IE_cont None _ ->
+               multipart_error "multipart header is longer than %i bytes"
+                 multipart_max_header_size.val
+           | _ ->
+               it_line >>= fun line ->
+                 let () = fdbg "read_part_headers: line = %S" line in
+                 if line = ""
+                 then return & List.rev acc
+                 else inner (count + 1) [line :: acc]
+           ]
        in
-         inner []
+         inner 0 []
      in
 
      let after_boundary =
