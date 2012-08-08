@@ -323,7 +323,7 @@ value it_multipart
        match ab with
        [ `Finished ->
            let () = fdbg "  `Finished" in
-           fdbg_stream_char "after finished" >>= fun () ->
+           (* fdbg_stream_char "after finished" >>= fun () -> *)
            it_ignore (* must ignore, RFC 2046 *) >>= fun () ->
            map_ready & feed_it it_fold (EOF None)
        | `Next ->
