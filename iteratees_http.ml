@@ -212,6 +212,15 @@ value (enum_chunk_decoded : enumeratee char char 'a) iter =
 ;
 
 
+value it_dbg it =
+  match it with
+  [ IE_cont None _ -> "IE_cont None _"
+  | IE_cont (Some e) _ -> Printf.sprintf "IE_cont (Some %S) _"
+      (Printexc.to_string e)
+  | IE_done _ -> "IE_done _"
+  ]
+;
+
 
 exception Multipart_error of string;
 
@@ -222,6 +231,7 @@ value multipart_error fmt =
 value multipart_max_header_size = ref 1024
   and multipart_max_headers_count = ref 10
 ;
+
 
 value it_multipart
  : string ->
@@ -325,7 +335,9 @@ value it_multipart
            let () = fdbg "  `Finished" in
            (* fdbg_stream_char "after finished" >>= fun () -> *)
            it_ignore (* must ignore, RFC 2046 *) >>= fun () ->
-           map_ready & feed_it it_fold (EOF None)
+           let res = feed_it it_fold (EOF None) in
+           let () = fdbg "    loop_boundaries: res = %s" (it_dbg res) in
+           map_ready res
        | `Next ->
            let () = fdbg "  `Next" in
            read_part_headers >>= fun part_headers ->
