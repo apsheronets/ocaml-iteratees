@@ -2756,6 +2756,16 @@ in
 ;
 
 
+value rec it_ignore_or_fail : iteratee 'el unit =
+  IE_cont None it_ignore_step
+and it_ignore_step = fun
+  [ EOF None as s -> ie_doneM () s
+  | (EOF (Some e)) as s -> ie_errorMsl e (Sl.one s)
+  | Chunk _ -> ie_contM it_ignore_step
+  ]
+;
+
+
 value rec it_ignore : iteratee 'el unit =
   IE_cont None it_ignore_step
 and it_ignore_step = fun
