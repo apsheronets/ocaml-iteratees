@@ -265,7 +265,7 @@ value it_multipart
            [ IE_cont None _ ->
                multipart_error "multipart header is longer than %i bytes"
                  multipart_max_header_size.val
-           | _ ->
+           | IE_cont (Some _) _ | IE_done _ ->
                it_line >>= fun line ->
                  let () = fdbg "read_part_headers: line = %S" line in
                  if line = ""
