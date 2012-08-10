@@ -173,6 +173,8 @@ module Sl
     value cons : stream 'el -> sl 'el -> sl 'el;
     value get_one_opt : sl 'el -> option (stream 'el);
     value one : stream 'el -> sl 'el;
+    value append : sl 'el -> sl 'el -> sl 'el;
+    value copy_my_buf : array 'el -> sl 'el -> sl 'el;
 
     value dbgsl : sl 'el -> string;
   end
@@ -189,7 +191,7 @@ module Sl
       match h with
       [ EOF _ ->
           let () = assert (t = []) in
-          [h (* :: t *)]
+          [h (* :: t=[] *)]
       | Chunk c ->
           if S.is_empty c
           then t
@@ -207,6 +209,28 @@ module Sl
       Printf.sprintf "sl:[%s]"
         (String.concat " ; " (List.map dbgstream sl))
     ;
+
+    value rec append sl1 sl2 =
+      match sl1 with
+      [ [sl1h :: sl1t] -> cons sl1h (append sl1t sl2)
+      | [] -> sl2
+      ]
+    ;
+
+    value copy_my_buf buf_arr sl =
+      List.map
+        (fun s ->
+           match s with
+           [ EOF _ -> s
+           | Chunk buf' ->
+               if buf'.S.arr == buf_arr
+               then Chunk (S.copy buf')
+               else s
+           ]
+        )
+        sl
+    ;
+
   end
 ;
 
@@ -940,37 +964,75 @@ value (_munres : res 'a -> IO.m 'a) r =
 ;
 
 
-value enum_readchars
+(* +
+   Partial enumerators.
+   In my concrete case they are needed when I've read some data and
+   have to do some action without waiting for Chunk|EOF from stream
+   (otherwise they are not needed; 'lift' would be enough (note that
+   'lift' makes iteratee 'IE_cont None _')).
+
+   In return type:
+     option enumpart.. is None when sl contains EOF or EOF is got
+     from enumerated resource; expecting that enumerator is deinited
+     when returns None.
+
+     When [Lazy.t (sl 'el)] is going to be used, it must be forced
+     before next call to opt_enumpart.
+ *)
+
+type enumpart 'el 'a = sl 'el -> iteratee 'el 'a ->
+  IO.m (iteratee 'el 'a * Lazy.t (sl 'el) * opt_enumpart 'el 'a)
+and opt_enumpart 'el 'a =
+  (* to avoid -rectypes *)
+  [ EP_None
+  | EP_Some of enumpart 'el 'a
+  ]
+;
+
+
+value enumpart_readchars
  : ! 'ch .
    ~buffer_size:int ->
    ~read_func:('ch -> string -> int (*ofs*) -> int (*len*) -> IO.m int) ->
    'ch ->
-   enumerator char 'a
- = fun ~buffer_size ~read_func inch i ->
+   enumpart char 'a
+ = fun ~buffer_size ~read_func inch sl it ->
      let buf_str = String.create buffer_size
      and buf_arr = Array.make buffer_size '\x00' in
-     let rec loop k =
+
+     let rec feed sl k =
+       match Sl.destr_head sl with
+       [ None -> loop k
+       | Some (sl_h, sl_t) ->
+           k sl_h >>% fun (it, sl') ->
+           check (Sl.append sl' sl_t) it
+       ]
+     and loop k =
        mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
        match read_res with
        [ `Error e ->
-           k (EOF (some & ierr_of_merr e)) >>% IO.return % fst
+           k (EOF (some & ierr_of_merr e)) >>% fun (it, sl') ->
+           IO.return (it, lazy sl', EP_None)
        | `Ok have_read ->
            mprintf "Read buffer, size %i\n" have_read >>% fun () ->
            let () = assert (have_read >= 0) in
            if have_read = 0
            then
-             IO.return (ie_cont k)
+             IO.return (ie_cont k, lazy Sl.empty, EP_None)
            else
              let c = S.replace_with_substring buf_arr buf_str 0 have_read in
-             k (Chunk c) >>% check % fst
+             k (Chunk c) >>% fun (it, sl') ->
+             check sl' it
        ]
-     and check i =
-       match i with
-       [ IE_cont None k -> loop k
-       | IE_cont (Some _) _ | IE_done _ -> IO.return i
+
+     and check sl it =
+       match it with
+       [ IE_cont None k -> feed sl k
+       | IE_cont (Some _) _ | IE_done _ ->
+           IO.return (it, lazy (Sl.copy_my_buf buf_arr sl), EP_Some check)
        ]
      in
-       check i
+       check sl it
 ;
 
 
@@ -979,11 +1041,15 @@ value enum_readchars
    We use the same buffer all throughout enumeration
 *)
 
-value (enum_fd : IO.input_channel -> enumerator char 'a) inch =
-  enum_readchars
+value (enum_fd : IO.input_channel -> enumerator char 'a) inch it =
+  enumpart_readchars
     ~buffer_size:enum_fd_buffer_size.val
     ~read_func:IO.read_into
     inch
+    Sl.empty
+    it
+  >>% fun (it, _sl_rest_l, _opt_enumpart) ->
+  IO.return it
 ;
 
 
@@ -1674,7 +1740,8 @@ value feed_it :
     match it with
     [ IE_done _ | IE_cont (Some _) _ -> it
     | IE_cont None k ->
-        liftI (k s >>% fun (it, _) -> IO.return it)
+        liftI
+          (k s >>% fun (it, _) -> IO.return it)
     ]
 ;
 
