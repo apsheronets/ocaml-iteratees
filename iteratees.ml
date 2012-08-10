@@ -1036,20 +1036,30 @@ value enumpart_readchars
 ;
 
 
+value enum_readchars
+ : ! 'ch .
+   ~buffer_size:int ->
+   ~read_func:('ch -> string -> int (*ofs*) -> int (*len*) -> IO.m int) ->
+   'ch ->
+   enumerator char 'a
+ = fun ~buffer_size ~read_func ch it ->
+  enumpart_readchars ~buffer_size ~read_func ch
+    Sl.empty
+    it
+  >>% fun (it, _sl_rest_l, _opt_enumpart) ->
+  IO.return it
+;
+
 
 (* The enumerator of M's channels
    We use the same buffer all throughout enumeration
 *)
 
-value (enum_fd : IO.input_channel -> enumerator char 'a) inch it =
-  enumpart_readchars
+value (enum_fd : IO.input_channel -> enumerator char 'a) inch =
+  enum_readchars
     ~buffer_size:enum_fd_buffer_size.val
     ~read_func:IO.read_into
     inch
-    Sl.empty
-    it
-  >>% fun (it, _sl_rest_l, _opt_enumpart) ->
-  IO.return it
 ;
 
 
