@@ -990,6 +990,10 @@ and opt_enumpart 'el 'a =
 ;
 
 
+value fdbg fmt = Printf.ksprintf (Printf.eprintf "forms: %s\n%!") fmt
+;
+
+
 value enumpart_readchars
  : ! 'ch .
    ~buffer_size:int ->
@@ -1008,6 +1012,7 @@ value enumpart_readchars
            check (Sl.append sl' sl_t) it
        ]
      and loop k =
+       let () = fdbg "ep: loop" in
        mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
        match read_res with
        [ `Error e ->
@@ -1027,8 +1032,11 @@ value enumpart_readchars
 
      and check sl it =
        match it with
-       [ IE_cont None k -> feed sl k
+       [ IE_cont None k ->
+           let () = fdbg "ep: check: cont" in
+           feed sl k
        | IE_cont (Some _) _ | IE_done _ ->
+           let () = fdbg "ep: check: ready" in
            IO.return (it, lazy (Sl.copy_my_buf buf_arr sl), EP_Some check)
        ]
      in
@@ -2665,9 +2673,6 @@ module Deque_stream
   end
 ;
 
-
-value fdbg fmt = Printf.ksprintf (Printf.eprintf "forms: %s\n%!") fmt
-;
 
 (*
 на первом шаге it_subseq_step должен выдавать None для ". не нашли"
