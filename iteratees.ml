@@ -1356,7 +1356,14 @@ value junk = IE_cont None (fun s -> drop_step 1 s)
 
 value array_ensure_size ~default array_ref size =
   let realloc () =
-    let r = Array.make size default in
+    let new_size =
+      loop 1
+      where rec loop n =
+        if n < size
+        then loop (n * 2)
+        else n
+    in
+    let r = Array.make new_size default in
     ( array_ref.val := r
     ; r
     )
