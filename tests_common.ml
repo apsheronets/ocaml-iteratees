@@ -30,6 +30,8 @@ module I = Make(IO);
 value () = P.printf "after functor app\n%!";
 open I;
 
+module Je = It_misc.Js_escape(IO);
+
 value mprintf fmt =
   Printf.ksprintf
     (fun s ->
@@ -65,7 +67,7 @@ value test_iteratee : iteratee char (char * char) =
 value string_of_e e =
   let (e, p) =
     match e with
-    [ Iteratees_err_msg e -> (e, "")
+    [ Iteratees_err_msg e | Je.I.Iteratees_err_msg e -> (e, "")
     | EIO (e, p) -> (e, p)
     | e -> (e, "")
     ]
@@ -829,6 +831,26 @@ qwe"
 ;
 
 
+value test_js_unescape () =
+( dbg "test_js_unescape"
+; assert ((
+    runA & enum_pure_nchunk
+           (expl "ab%2C*.cd%u0439%u0446%u0443ef%uD834%uDF06gh") 1
+           (joinI & Je.unescape stream2list)
+    ) = `Ok
+           [ Char.code 'a'; Char.code 'b'; Char.code ','
+           ; Char.code '*'; Char.code '.'; Char.code 'c'
+           ; Char.code 'd'
+           ; 0x439; 0x446; 0x443; Char.code 'e'; Char.code 'f'
+           ; 0x1D306
+           ; Char.code 'g'; Char.code 'h'
+           ]
+  )
+; dbg "passed"
+)
+;
+
+
 value () =
   ( P.printf "TESTS BEGIN.\n"
 
@@ -854,6 +876,8 @@ value () =
   ; test_base64decode ()
 
   ; test_forms ()
+
+  ; test_js_unescape ()
 
   ; P.printf "TESTS END.\n"
   );
