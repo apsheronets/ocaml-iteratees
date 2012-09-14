@@ -1309,7 +1309,7 @@ value rec (enum_words : enumeratee char string 'a) i =
 
 
 
-value break_feed : ('a -> bool) -> enumeratee 'a 'a 'b = fun pred it ->
+value break_feed : ('a -> bool) -> enumeratee 'a 'a 'b = fun pred it_ ->
   let rec break_feed it =
     match it with
     [ IE_done _ | IE_cont (Some _) _ -> return it
@@ -1319,10 +1319,14 @@ value break_feed : ('a -> bool) -> enumeratee 'a 'a 'b = fun pred it ->
     match s with
     [ EOF _ -> ie_doneM (ie_cont k) s
     | Chunk c ->
+       if S.length c = 0
+       then
+        ie_contM & step k
+       else
         let (to_feed, to_leave) = S.break pred c in
         if S.is_empty to_feed
         then
-          ie_doneM it s
+          ie_doneM (ie_cont k) s
         else
           k (Chunk to_feed) >>% fun (it, sl) ->
           match it with
@@ -1338,7 +1342,7 @@ value break_feed : ('a -> bool) -> enumeratee 'a 'a 'b = fun pred it ->
           ]
     ]
   in
-    break_feed it
+    break_feed it_
 ;
 
 
