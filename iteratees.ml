@@ -1565,10 +1565,13 @@ module UTF8
         utf8_of_char ~acc:(`Acc S.empty) uit
     ;
 
+
+    value bad16 fmt = Printf.ksprintf (fun s -> throw_err (Bad_utf16 s)) fmt;
+
     (* todo: in a more chunk-way *)
 
     value utf8_of_utf16 : enumeratee utf16item uchar 'a =
-    fun it ->
+    fun it_ ->
       let is_surr c = (c >= 0xD800 && c <= 0xDFFF) in
       let rec utf8_of_utf16 it =
         break_feed is_surr it >>= fun it ->
@@ -1587,7 +1590,7 @@ module UTF8
                 | Some hi_surr ->
                     if hi_surr < 0xD800 || hi_surr > 0xDBFF
                     then
-                      throw_err (Bad_utf16 "high surrogate out of range")
+                      bad16 "high surrogate out of range: 0x%x04" hi_surr
                     else
                       junk >>= fun () ->
                       peek >>= fun lo_surr_opt ->
@@ -1616,7 +1619,7 @@ module UTF8
 
         ]
       in
-        utf8_of_utf16 it
+        utf8_of_utf16 it_
     ;
 
   end;  (* `UTF8' functor *)
@@ -1791,16 +1794,19 @@ value gather_to_string : iteratee char string =
   prepend
     (fun () -> Buffer.create 50)
     (fun buf ->
-       ie_cont step
-       where rec step s =
+       let rec step s =
          match s with
          [ Chunk c ->
-             ( Subarray.buffer_add buf c ; ie_contM step )
+             ( Subarray.buffer_add buf c
+             ; ie_contM step
+             )
          | EOF None ->
              ie_doneM (Buffer.contents buf) s
          | EOF (Some e) ->
              IO.error e
          ]
+       in
+       ie_cont step
     )
 ;
 
