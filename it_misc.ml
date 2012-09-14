@@ -65,16 +65,16 @@ module Subarray_cat
 ;
 
 
+type uchar = int;
+
+
 module UTF8(IO : It_Types.MonadIO)
  :
   sig
-    type uchar = private int;
     value utf8_of_char : (Iteratees.Make(IO)).enumeratee char uchar 'a;
   end
  =
   struct
-
-    type uchar = int;
 
     open Iteratees;
     module I = Make(IO);
@@ -84,7 +84,6 @@ module UTF8(IO : It_Types.MonadIO)
 
     exception Bad_utf8 of string
     ;
-
 
 (*  without actual conversion:
     value sc_ulen sc =

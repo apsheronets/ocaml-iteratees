@@ -1308,6 +1308,48 @@ value rec (enum_words : enumeratee char string 'a) i =
 ;
 
 
+
+value break_feed : ('a -> bool) -> enumeratee 'a 'a 'b = fun pred it ->
+  let rec break_feed it =
+    match it with
+    [ IE_done _ | IE_cont (Some _) _ -> return it
+    | IE_cont None k -> ie_cont & step k
+    ]
+  and step k s =
+    match s with
+    [ EOF _ -> ie_doneM (ie_cont k) s
+    | Chunk c ->
+        let (to_feed, to_leave) = S.break pred c in
+        if S.is_empty to_feed
+        then
+          ie_doneM it s
+        else
+          k (Chunk to_feed) >>% fun (it, sl) ->
+          match it with
+          [ IE_done _ | IE_cont (Some _) _ ->
+              ie_doneMsl it (Sl.append sl & Sl.one & Chunk to_leave)
+          | IE_cont None _k ->
+              (* here: s is empty *)
+              if S.is_empty to_leave  (* break not found *)
+              then
+                IO.return (break_feed it, Sl.empty)
+              else
+                ie_doneM it (Chunk to_leave)
+          ]
+    ]
+  in
+    break_feed it
+;
+
+
+(* +
+   [junk] = [drop 1]
+*)
+
+value junk = IE_cont None (fun s -> drop_step 1 s)
+;
+
+
 value array_ensure_size ~default array_ref size =
   let realloc () =
     let r = Array.make size default in
@@ -1326,17 +1368,23 @@ value array_ensure_size ~default array_ref size =
 module SC = Subarray_cat
 ;
 
+type uchar = int;
+type utf16item = int;
+
+
 module UTF8
  :
   sig
-    type uchar = private int;
     value utf8_of_char : enumeratee char uchar 'a;
+    value utf8_of_utf16 : enumeratee utf16item uchar 'a;
   end
  =
   struct
-    type uchar = int;
 
     exception Bad_utf8 of string
+    ;
+
+    exception Bad_utf16 of string
     ;
 
     value ensure_size = array_ensure_size ~default:(-1)
@@ -1511,6 +1559,60 @@ module UTF8
         ]
       in
         utf8_of_char ~acc:(`Acc S.empty) uit
+    ;
+
+    (* todo: in a more chunk-way *)
+
+    value utf8_of_utf16 : enumeratee utf16item uchar 'a =
+    fun it ->
+      let is_surr c = (c >= 0xD800 && c <= 0xDFFF) in
+      let rec utf8_of_utf16 it =
+        break_feed is_surr it >>= fun it ->
+        get_stream_eof >>= fun opt_opt_err ->
+        match opt_opt_err with
+        [ Some None -> return it
+        | Some (Some err) -> throw_err err
+        | None ->
+            match it with
+            [ IE_done _ | IE_cont (Some _) _ ->
+                return it
+            | IE_cont None k ->
+                peek >>= fun hi_surr_opt ->
+                match hi_surr_opt with
+                [ None -> return it
+                | Some hi_surr ->
+                    if hi_surr < 0xD800 || hi_surr > 0xDBFF
+                    then
+                      throw_err (Bad_utf16 "high surrogate out of range")
+                    else
+                      junk >>= fun () ->
+                      peek >>= fun lo_surr_opt ->
+                      match lo_surr_opt with
+                      [ None -> throw_err
+                          (Bad_utf16 "eof after high surrogate")
+                      | Some lo_surr ->
+                          junk >>= fun () ->
+                          if lo_surr < 0xDC00 || lo_surr > 0xDFFF
+                          then
+                            throw_err (Bad_utf16 "low surrogate out of range")
+                          else
+                            let uchar = (hi_surr - 0xD800) * 0x400
+                                        + lo_surr - 0xDC00 + 0x10000
+                            in
+                              let it =
+                                liftI (k (chunk_of uchar) >>% fun (it, _sl) ->
+                                       IO.return it)
+                              in
+                                utf8_of_utf16 it
+                      ]
+                  ]
+            ]
+
+
+
+        ]
+      in
+        utf8_of_utf16 it
     ;
 
   end;  (* `UTF8' functor *)
@@ -1857,14 +1959,6 @@ value itlist_anyresult_lasterror
   list (iteratee 'el 'a) -> iteratee 'el 'a
  =
   Anyresult_lasterror.itlist_anyresult_lasterror
-;
-
-
-(* +
-   [junk] = [drop 1]
-*)
-
-value junk = IE_cont None (fun s -> drop_step 1 s)
 ;
 
 

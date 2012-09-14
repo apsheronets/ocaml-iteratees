@@ -16,6 +16,9 @@ module Tests_functor(IO : MonadIO)
 =
 struct
 
+value dbg fmt = Printf.ksprintf (Printf.printf "%s\n%!") fmt
+;
+
 value runIO = IO.runIO
 ;
 
@@ -84,7 +87,7 @@ value print_char_tuple (c1, c2) = sprintf "(%C, %C)" c1 c2
 ;
 
 value (runA : IO.m (iteratee 'el 'a) -> res 'a) i =
-  runIO (i >>% run)
+      let r = runIO (i >>% run) in (flush stdout; r)
 ;
 
 value run_print f i =
@@ -404,8 +407,7 @@ value tests_driver_full () =
 
 module U = I.UTF8;
 
-value (dump_utf8_chars : iteratee U.uchar unit) =
- let pr s = mprintf "dump_utf8_chars: %s\n" s in
+value (dump_utf8_chars : iteratee uchar unit) =
 (*
  let pr s = IO.catch
    (fun () -> mprintf "dump_utf8_chars: %s\n" s)
@@ -420,24 +422,22 @@ value (dump_utf8_chars : iteratee U.uchar unit) =
  where rec inner s =
   match s with
   [ EOF opt_err ->
-      match opt_err with
-      [ None -> pr "natural end"
-      | Some e -> pr & sprintf "unnatural end: \"%s\"" & Printexc.to_string e
+    let () = match opt_err with
+      [ None -> dbg "natural end"
+      | Some e -> dbg "unnatural end: \"%s\"" & Printexc.to_string e
       ]
-      >>% fun () ->
+      in
       match opt_err with
       [ None -> ie_doneM () s
       | Some e -> IO.return & (throw_err e, Sl.one s)
       ]
   | Chunk c ->
-      pr
-       (sprintf "chunk of %i chars: [%s]"
+      let () = dbg "chunk of %i chars: [%s]"
         (S.length c)
         (String.concat "" &
-         List.map (fun c -> sprintf "&#x%X;" (c : U.uchar :> int)) &
+         List.map (fun c -> sprintf "&#x%X;" (c : uchar :> int)) &
          S.to_list c)
-       )
-      >>% fun () ->
+      in
       ie_contM inner
   ]
 ;
@@ -471,6 +471,34 @@ value test_utf8_enumeratee () =
   ()
 )
 ;
+
+value test_utf16_enumeratee () =
+(
+  dbg "test_utf16_enumeratee"
+;
+  assert ((
+    runA & enum_pure_nchunk [0x41; 0x42; 0x0436; 0x43] 1
+           (joinI & U.utf8_of_utf16 dump_utf8_chars)
+    ) = `Ok ()
+  )
+;
+  let res =
+      runA & (enum_pure_nchunk [0x0436; 0xD834; 0xDF06; 0x0437] 1
+              >>> enum_err Myexc)
+             (joinI & U.utf8_of_utf16 dump_utf8_chars)
+  in
+(*
+  match res with
+  [ `Ok () -> assert False
+  | `Error e -> P.printf "exn: %s\n%!" (Printexc.to_string e)
+  ]
+*)
+    assert (res = `Error (Iteratees_err_msg Myexc))
+;
+  ()
+)
+;
+
 
 
 
@@ -817,6 +845,7 @@ value () =
   ; tests_driver_full ()
 
   ; test_utf8_enumeratee ()
+  ; test_utf16_enumeratee ()
 
   ; test_limits ()
 
