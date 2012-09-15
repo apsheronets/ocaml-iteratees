@@ -3193,9 +3193,28 @@ end
 
 
 
+module I_Pure = Make(Pure_IO);
 
+exception Parse_string_not_full;
 
-
+(* parses string and ensures that the whole string is fed to iteratee,
+   otherwise returns [`Error Parse_string_not_full]. *)
+value parse_string_full
+ : I_Pure.iteratee char 'a -> string -> [= `Ok of 'a | `Error of exn ]
+ = fun it str ->
+     let open I_Pure in
+     Pure_IO.runIO &
+     (enum_string str
+       (it >>= fun r ->
+        peek >>= fun
+        [ Some _ -> throw_err Parse_string_not_full
+        | None -> return r
+        ]
+       )
+      >>% run
+     )
+     
+;
 
 
 
