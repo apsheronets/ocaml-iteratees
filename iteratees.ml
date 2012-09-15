@@ -1391,6 +1391,7 @@ module UTF8
   sig
     value utf8_of_char : enumeratee char uchar 'a;
     value utf8_of_utf16 : enumeratee utf16item uchar 'a;
+    value char_of_utf8 : enumeratee uchar char 'a;
   end
  =
   struct
@@ -1399,6 +1400,9 @@ module UTF8
     ;
 
     exception Bad_utf16 of string
+    ;
+
+    exception Bad_unicode of string
     ;
 
     value ensure_size = array_ensure_size ~default:(-1)
@@ -1630,6 +1634,88 @@ module UTF8
         ]
       in
         utf8_of_utf16 it_
+    ;
+
+
+    exception Internal_bad_unicode of (int * int * int);
+
+    value encode_utf8_error in_ofs_for_exn ofs c =
+      raise (Internal_bad_unicode in_ofs_for_exn ofs c)
+    ;
+
+    value encode_utf8 in_ofs_for_exn c arr ofs =
+      if (c < 0 || c >= 0x110000)
+      then
+        encode_utf8_error in_ofs_for_exn ofs c
+      else if (c < 0x80)
+      then
+        ( arr.(ofs) := Char.chr c
+        ; ofs + 1
+        )
+      else if (c < 0x0800)
+      then
+        ( arr.(ofs)     := Char.chr ((c lsr 6) land 0x1F lor 0xC0)
+        ; arr.(ofs + 1) := Char.chr ( c        land 0x3F lor 0x80)
+        ; ofs + 2
+        )
+      else if (c < 0x010000)
+      then
+        ( arr.(ofs)     := Char.chr ((c lsr 12) land 0x0F lor 0xE0)
+        ; arr.(ofs + 1) := Char.chr ((c lsr  6) land 0x3F lor 0x80)
+        ; arr.(ofs + 2) := Char.chr ( c         land 0x3F lor 0x80)
+        ; ofs + 3
+        )
+      else (* if (c < 0x110000) then *)
+        ( arr.(ofs)     := Char.chr ((c lsr 18) land 0x07 lor 0xF0)
+        ; arr.(ofs + 1) := Char.chr ((c lsr 12) land 0x3F lor 0x80)
+        ; arr.(ofs + 2) := Char.chr ((c lsr  6) land 0x3F lor 0x80)
+        ; arr.(ofs + 3) := Char.chr ( c         land 0x3F lor 0x80)
+        ; ofs + 4
+        )
+    ;
+
+    value char_of_utf8 : enumeratee uchar char 'a = fun it_ ->
+      let ensure_size = array_ensure_size ~default:'\x00' in
+      let arrref = ref [| |] in
+      let rec char_of_utf8 it =
+        match it with
+        [ IE_done _ | IE_cont (Some _) _ -> return it
+        | IE_cont None k -> ie_cont & step k
+        ]
+      and step k s =
+        match s with
+        [ EOF _ -> ie_doneM (ie_cont k) s
+        | Chunk c ->
+            let in_len = S.length c in
+            let arr = ensure_size arrref (in_len * 4) in
+            let rec loop i o =
+              if i = in_len
+              then o
+              else
+                let new_ofs = encode_utf8 i (S.get c i) arr o in
+                loop (i + 1) new_ofs
+            in
+            let loop_res =
+              try `Ok (loop 0 0)
+              with [ Internal_bad_unicode inofs outofs ch ->
+                       `Error (inofs, outofs, ch) ] in
+            let feed outofs =
+              k (Chunk (S.of_array_sub arr 0 outofs)) >>% fun (it, _sl) ->
+              IO.return it
+            in
+            match loop_res with
+            [ `Error (inofs, outofs, ch) ->
+                feed outofs >>% fun _it ->
+                ie_errorMsl
+                  (Bad_unicode (Printf.sprintf "character code 0x%X" ch))
+                  (Sl.one (Chunk (S.drop inofs c)))
+            | `Ok generated ->
+                feed generated >>% fun it ->
+                IO.return (char_of_utf8 it, Sl.empty)
+            ]
+        ]
+      in
+        char_of_utf8 it_
     ;
 
   end;  (* `UTF8' functor *)
