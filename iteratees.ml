@@ -1355,13 +1355,16 @@ value junk = IE_cont None (fun s -> drop_step 1 s)
 
 
 value array_ensure_size ~default array_ref size =
+  if size < 0 || size > Sys.max_array_length
+  then invalid_arg "Iteratees.array_ensure_size: bad size"
+  else
   let realloc () =
     let new_size =
       loop 1
       where rec loop n =
         if n < size
         then loop (n * 2)
-        else n
+        else min n Sys.max_array_length
     in
     let r = Array.make new_size default in
     ( array_ref.val := r
