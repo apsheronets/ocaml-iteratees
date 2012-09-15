@@ -284,7 +284,7 @@ module Js_escape(IO : It_Types.MonadIO)
   sig
     exception Js_bad_escape of string;
 
-    value unescape : (Iteratees.Make(IO)).enumeratee char uchar 'a;
+    value unescape : (Iteratees.Make(IO)).enumeratee char char 'a;
 
     module I : sig exception Iteratees_err_msg of exn; end;
   end
@@ -365,7 +365,10 @@ module Js_escape(IO : It_Types.MonadIO)
     ;
 
 
-    value unescape it = joinI & unescape_utf16 (UTF8.utf8_of_utf16 it)
+    value unescape_unicode it = joinI & unescape_utf16 (UTF8.utf8_of_utf16 it)
+    ;
+
+    value unescape it = joinI & unescape_unicode (UTF8.char_of_utf8 it)
     ;
 
   end

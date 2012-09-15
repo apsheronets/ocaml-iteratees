@@ -831,20 +831,44 @@ qwe"
 ;
 
 
+value string_hex_escape s =
+  let b = Buffer.create 1 in
+  loop 0
+  where rec loop i =
+    if i = String.length s
+    then Buffer.contents b
+    else
+      let ch = s.[i] in
+      let c = Char.code ch in
+      let () =
+        if c < 0x20 || c >= 0x80
+        then Buffer.add_string b (Printf.sprintf "\\x%02X" c)
+        else Buffer.add_char b ch
+      in loop (i + 1)
+;
+
+
+value dump_chars : iteratee char unit =
+  ie_cont step
+  where rec step s =
+    match s with
+    [ EOF None -> ie_doneM (dbg "dump_chars: normal eof") s
+    | EOF (Some e) -> ie_doneM (dbg "dump_chars: eof with error: %s"
+        (Printexc.to_string e)) s
+    | Chunk c ->
+        let () = dbg "dump_chars: %s" (string_hex_escape & S.to_string c) in
+        ie_contM step
+    ]
+;
+
+
 value test_js_unescape () =
 ( dbg "test_js_unescape"
 ; assert ((
     runA & enum_pure_nchunk
            (expl "ab%2C*.cd%u0439%u0446%u0443ef%uD834%uDF06gh") 1
-           (joinI & Je.unescape stream2list)
-    ) = `Ok
-           [ Char.code 'a'; Char.code 'b'; Char.code ','
-           ; Char.code '*'; Char.code '.'; Char.code 'c'
-           ; Char.code 'd'
-           ; 0x439; 0x446; 0x443; Char.code 'e'; Char.code 'f'
-           ; 0x1D306
-           ; Char.code 'g'; Char.code 'h'
-           ]
+           (joinI & Je.unescape gather_to_string)
+    ) = `Ok "ab,*.cd\xD0\xB9\xD1\x86\xD1\x83ef\xF0\x9D\x8C\x86gh"
   )
 ; dbg "passed"
 )
