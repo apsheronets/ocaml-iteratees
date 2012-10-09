@@ -744,7 +744,7 @@ value dump_after title =
 ;
 
 
-value test_forms () =
+value test_forms ~allsizes () =
   let test1 =
 ( "qwe\r\n-----------------------------7045176531256545735900303621\
 \r\nContent-Disposition: form-data; name=\"MAX_FILE_SIZE\"\r\n\r\n100000\r\n\
@@ -790,42 +790,58 @@ qwe"
   in
     List.iter
       (fun (body, boundary, expected) ->
-         match IO.runIO
-         ((enum_string
-             body
-             (     (H.it_multipart boundary
-                      (fun headers ->
-                         let () = fdbg "getting part" in
-                         gather_to_string >>= fun part ->
-                         (* let () = fdbg "got part: %S" part in *)
-                         dump_after "part" >>= fun () ->
-                         return (headers, part)
-                      )
-                      (stream2list >>= fun lst ->
-                       dump_after "all parts" >>= fun () ->
-                       return lst
-                      )
-                   )
+         let run_size sz =
+           let () = fdbg "test_forms/run_size %i" sz in
+           match IO.runIO
+           ((enum_string ~chunk_size:sz
+               body
+               (     (H.it_multipart boundary
+                        (fun headers ->
+                           let () = fdbg "getting part" in
+                           gather_to_string >>= fun part ->
+                           let () = fdbg "got part (%i bytes): %S"
+                             (String.length part) part in
+                           dump_after "part" >>= fun () ->
+                           return (headers, part)
+                        )
+                        (stream2list >>= fun lst ->
+                         dump_after "all parts" >>= fun () ->
+                         return lst
+                        )
+                     )
+               )
+            ) >>% run
+           )
+           with
+           [ `Ok got ->
+               if expected <> got
+               then failwith "test failed"
+               else Printf.printf "test passed\n%!"
+           | `Error e ->
+               failwith
+                 (Printf.sprintf
+                    "forms: test failed with exception: %s" (msg e)
+                 )
+               where rec msg e =
+                 match e with
+                 [ Left (e, s) ->
+                     sprintf "%s (stream left: %S)"
+                       (msg e) s
+                 | H.Multipart_error s -> s
+                 | Iteratees_err_msg e -> msg e
+                 | e -> Printexc.to_string e
+                 ]
+           ]
+         in
+           if allsizes
+           then
+             ( for i = 1 to String.length body
+               do
+                 run_size i
+               done
              )
-          ) >>% run
-         )
-         with
-         [ `Ok got ->
-             if expected <> got
-             then failwith "test failed"
-             else Printf.printf "test passed\n%!"
-         | `Error e ->
-             Printf.eprintf "forms: test failed with exception: %s" (msg e)
-             where rec msg e =
-               match e with
-               [ Left (e, s) ->
-                   sprintf "%s (stream left: %S)"
-                     (msg e) s
-               | H.Multipart_error s -> s
-               | Iteratees_err_msg e -> msg e
-               | e -> Printexc.to_string e
-               ]
-         ]
+           else
+             run_size 617
       )
       [test1]
 ;
@@ -899,7 +915,7 @@ value () =
 
   ; test_base64decode ()
 
-  ; test_forms ()
+  ; test_forms ~allsizes:False ()
 
   ; test_js_unescape ()
 

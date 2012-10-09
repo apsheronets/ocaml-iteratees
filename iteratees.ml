@@ -2937,8 +2937,8 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
        смещения, имеющихся в значениях loop_index *)
     let len = cur_ofs - first_ofs in
     let () = assert (len >= 0) in
-    let () = fdbg "bs: feed_first_chunk: %i .. %i (len = %i)"
-      first_ofs cur_ofs len in
+    let () = fdbg "bs: feed_first_chunk: %i .. %i (len = %i) (chunk len = %i)"
+      first_ofs cur_ofs len (S.length first_chunk) in
     if len = 0
     then IO.return it_proc
     else
@@ -2976,6 +2976,7 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
           in
           match sq_it with
           [ IE_done sub_res ->
+             let () = fdbg "bs: loop_ofs: sq_it done" in
              (* - когда результат от it_subseq_step -- *)
              (*   - Кормить *)
              feed_first_chunk ~cur_ofs:ofs it_proc >>% fun it_proc ->
@@ -2986,9 +2987,20 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
               "break_sequence: it_subseq_step should return None on error")
               Sl.empty
           | IE_cont None k_sub ->
+              let () = fdbg "bs: loop_ofs: sq_it cont" in
               (* - когда не ошибка, а "хочу ещё" от it_subseq_step -- *)
               (*   - Кормить *)
               feed_first_chunk ~cur_ofs:ofs it_proc >>% fun it_proc ->
+              let () = fdbg "substep/cont: head = %s at ofs %i"
+                (dbgstream (Chunk first_chunk)) ofs in
+              let qtail = Deque_stream.cons
+                0
+                (let c = S.drop ofs first_chunk in
+                 let c = S.copy c in
+                 Chunk c
+                )
+                qtail
+              in
               step1 k_sub it_proc qtail
           ]  (* match sq_it *)
       ]  (* match it_subseq_step option *)
@@ -2999,17 +3011,20 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
 and step1 k_sub it_proc q =
   (* запрашиваем чанк *)
   ie_contM & fun s ->
+  let () = fdbg "step1: new chunk = %s" (dbgstream s) in
   let q = Deque_stream.snoc q 0 s in
   (* дать s в k_sub, посмотреть на результат *)
   k_sub s >>% fun (it_sub, sl_sub) ->
   match it_sub with
   [ IE_done r ->
+      let () = fdbg "step1: it_sub done, sl_sub = %s" (Sl.dbgsl sl_sub) in
       break_subsequence_ret
         (Deque_stream.cons_sl sl_sub Deque_stream.empty)
         ~sub_res_opt:(Some r)
         it_proc
 
   | IE_cont (Some _) _ ->
+       let () = fdbg "step1: it_sub error" in
        (* - если ошибка -- loop_index со следующего смещения в первом чанке
             очереди (может дать ofs=len) *)
        match Deque_stream.destr_head q with
@@ -3025,11 +3040,16 @@ and step1 k_sub it_proc q =
                  it_proc
 
            | Chunk first_chunk ->
+               feed_proc it_proc
+                 (Chunk (S.sub first_chunk ~ofs:first_ofs ~len:1))
+               >>% fun it_proc ->
                loop_index first_chunk (first_ofs + 1) it_proc ~qtail
            ]
        ]
 
-  | IE_cont None k_sub -> step1 k_sub it_proc q
+  | IE_cont None k_sub ->
+      let () = fdbg "step1: it_sub cont" in
+      step1 k_sub it_proc q
   ]
 in
   ie_cont & fun s ->
@@ -3109,21 +3129,25 @@ value probe_string str
            then cmp arr ~ofs:(ofs + 1) ~i:(i + 1)
            else `No
      in
-     let ret ofs_after =
+     let ret ~arr ofs_after =
        let () = fdbg "probe_string: len=%i, dropping %i"
          (S.length arr) ofs_after in
        ie_doneM () (Chunk (S.drop ofs_after arr))
      in
      let rec it_first_step arr ~ofs ~i
       : option (IO.m (iteratee char unit * sl char)) =
+       (* let () = fdbg "probe_string: it_first_step: ofs=%i i=%i" ofs i in *)
        match cmp arr ~ofs ~i with
-       [ `Yes ofs_after -> Some (ret ofs_after)
+       [ `Yes ofs_after -> Some (ret ~arr ofs_after)
        | `No -> None
        | `Maybe i ->
            let () = fdbg "probe: cont from first step" in
            Some (ie_contM & it_step ~i)
        ]
      and it_step ~i s =
+       (* let () = fdbg "probe_string: it_step: i=%i, stream=%s"
+            i (dbgstream s)
+       in *)
        match s with
        [ EOF eopt ->
            ie_errorMsl
@@ -3131,7 +3155,7 @@ value probe_string str
              (Sl.one s)
        | Chunk arr ->
            match cmp arr ~ofs:0 ~i with
-           [ `Yes ofs_after -> ret ofs_after
+           [ `Yes ofs_after -> ret ~arr ofs_after
            | `Maybe i -> ie_contM (it_step ~i)
            | `No -> ie_errorMsl Not_found (Sl.one s)
            ]
