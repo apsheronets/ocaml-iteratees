@@ -994,6 +994,11 @@ value fdbg fmt = Printf.ksprintf (Printf.eprintf "forms: %s\n%!") fmt
 ;
 
 
+(* +
+   here the buffer will be copied just once, [sl] will be reused
+   on next calls to enumerator.
+*)
+
 value enumpart_readchars
  : ! 'ch .
    ~buffer_size:int ->
