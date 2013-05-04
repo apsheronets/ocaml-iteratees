@@ -276,8 +276,10 @@ type sl 'el = Sl.sl 'el
 type iteratee 'el 'a =
   [ IE_done of 'a
   | IE_cont of option err_msg
-            and (stream 'el -> IO.m (iteratee 'el 'a  *  sl 'el))
+            and iteratee_cont 'el 'a
   ]
+and iteratee_cont 'el 'a =
+  stream 'el -> IO.m (iteratee 'el 'a  *  sl 'el)
 ;
 
 
@@ -981,12 +983,17 @@ value (_munres : res 'a -> IO.m 'a) r =
  *)
 
 type enumpart 'el 'a = sl 'el -> iteratee 'el 'a ->
-  IO.m (iteratee 'el 'a * Lazy.t (sl 'el) * opt_enumpart 'el 'a)
-and opt_enumpart 'el 'a =
+  enumpart_ret 'el 'a
+and enumpart_ret 'el 'a =
+  IO.m (iteratee 'el 'a * Lazy.t (sl 'el) * opt_enumpart 'el)
+and opt_enumpart 'el =
   (* to avoid -rectypes *)
   [ EP_None
-  | EP_Some of enumpart 'el 'a
+  | EP_Some of enumpart_poly 'el
   ]
+and enumpart_poly 'el =
+  { enumpart_poly : ! 'a . enumpart 'el 'a
+  }
 ;
 
 
@@ -1000,7 +1007,7 @@ value fdbg fmt = Printf.ksprintf (Printf.eprintf "forms: %s\n%!") fmt
 *)
 
 value enumpart_readchars
- : ! 'ch .
+ : ! 'ch 'a .
    ~buffer_size:int ->
    ~read_func:('ch -> string -> int (*ofs*) -> int (*len*) -> IO.m int) ->
    'ch ->
@@ -1009,14 +1016,16 @@ value enumpart_readchars
      let buf_str = String.create buffer_size
      and buf_arr = Array.make buffer_size '\x00' in
 
-     let rec feed sl k =
+     let rec (feed : ! 'a .
+       sl 'el -> iteratee_cont 'el 'a -> enumpart_ret 'el 'a
+     ) sl k =
        match Sl.destr_head sl with
        [ None -> loop k
        | Some (sl_h, sl_t) ->
            k sl_h >>% fun (it, sl') ->
            check (Sl.append sl' sl_t) it
        ]
-     and loop k =
+     and (loop : ! 'a . iteratee_cont 'el 'a -> enumpart_ret 'el 'a) k =
        let () = fdbg "ep: loop" in
        mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
        match read_res with
@@ -1035,14 +1044,19 @@ value enumpart_readchars
              check sl' it
        ]
 
-     and check sl it =
+     and (check : ! 'a . enumpart 'el 'a) sl it =
        match it with
        [ IE_cont None k ->
            let () = fdbg "ep: check: cont" in
            feed sl k
        | IE_cont (Some _) _ | IE_done _ ->
            let () = fdbg "ep: check: ready" in
-           IO.return (it, lazy (Sl.copy_my_buf buf_arr sl), EP_Some check)
+           IO.return
+             ( it
+             , lazy (Sl.copy_my_buf buf_arr sl)
+             , EP_Some
+                 { enumpart_poly = check }
+             )
        ]
      in
        check sl it
