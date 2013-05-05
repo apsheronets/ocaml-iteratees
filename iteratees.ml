@@ -1033,7 +1033,7 @@ value enumpart_readchars
            k (EOF (some & ierr_of_merr e)) >>% fun (it, sl') ->
            IO.return (it, lazy sl', EP_None)
        | `Ok have_read ->
-           let () = fdbg "ep: Read buffer, size %i\n" have_read in
+           let () = fdbg "ep: Read buffer, size %i" have_read in
            let () = assert (have_read >= 0) in
            if have_read = 0
            then
