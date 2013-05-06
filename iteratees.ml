@@ -3231,6 +3231,109 @@ value it_last
 ;
 
 
+
+
+(* +
+   This type is used in functions like [drop_exact] and [take_exact].
+   [`Done] is returned when all elements was processed.
+   [`Eof left opt_err_msg] is returned when stream should have [left] more
+   elements ([0 < left <= requested_number_of_elements], and [opt_err_msg]
+   represents the reason why stream contains less elements than needed
+   ([None] for normal end-of-file, [Some err_msg] for error).
+*)
+
+type it_exact =
+  [= `Done
+  |  `Eof of (int * option err_msg)
+  ]
+;
+
+
+(* +
+   [drop_exact count] is a combinator which drops exactly [count] elements
+   from stream.  Returns a value of [it_exact] type.
+*)
+
+value drop_exact count : iteratee 'el it_exact =
+  let rec step left s =
+    let () = assert (left > 0) in
+    match s with
+    [ EOF opt_err ->
+        ie_doneM (`Eof left opt_err) s
+    | Chunk c ->
+        let len = S.length c in
+        if left < len
+        then
+          let c' = S.drop left c in
+          ie_doneM `Done (Chunk c')
+        else
+          (* len <= left *)
+          ie_contM (step (count - len))
+    ]
+  in
+    if count < 0
+    then
+      throw_err (Invalid_argument "drop_exact: count < 0")
+    else if count = 0
+    then
+      return `Done
+    else
+      ie_cont (step count)
+;
+
+
+(* +
+   [take_exact count it] is a combinator which tries to take exactly [count]
+   elements feeding them to iteratee [it].  Returned value
+   [(it_exact, it)] is a tuple consisting of [it_exact]-typed value
+   that shows whether stream contains [count] elements or not, and [it]
+   value which is an iteratee that was fed with the stream (it may be in
+   any state: done, wanting more, error).
+*)
+
+value take_exact (count : int) (it : iteratee 'el 'a)
+ : iteratee 'el (it_exact * iteratee 'el 'a)
+ =
+  let rec loop it left =
+    if left = 0
+    then
+      return (`Done, it)
+    else
+      match it with
+      [ IE_done _ | IE_cont (Some _) _ ->
+          drop_exact left >>= fun ex ->
+          return (ex, it)
+      | IE_cont None k ->
+            ie_cont & step left k it
+      ]
+
+  and step left k it s =
+    let () = assert (left > 0) in
+    match s with
+    [ EOF err_msg ->
+        ie_doneM ((`Eof left err_msg), it) s
+    | Chunk c ->
+        let len = S.length c in
+        if left < len
+        then
+          let (c1, c2) = S.split_at left c in
+          k (Chunk c1) >>% fun (it, _s) ->
+          ie_doneM (`Done, it) (Chunk c2)
+        else
+          (* len <= left *)
+          k s >>% fun (it, _s) ->
+          IO.return (loop it (left - len), Sl.empty)
+    ]
+
+  in
+    if count < 0
+    then
+      throw_err (Invalid_argument "take_exact: count < 0")
+    else
+      loop it count
+;
+
+
 end
 ;  (* `Make' functor *)
 
