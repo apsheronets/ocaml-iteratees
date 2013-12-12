@@ -5,66 +5,6 @@ module S = Subarray
 ;
 
 
-module Subarray_cat
- :
-  sig
-    type t 'a;
-    value make : list (Subarray.t 'a) -> t 'a;
-    value length : t 'a -> int;
-    value get : t 'a -> int -> 'a;
-    value sub_copy_out : t 'a -> ~ofs:int -> ~len:int -> Subarray.t 'a;
-  end
- =
-  struct
-
-    type t 'a = array (Subarray.t 'a)
-    ;
-
-    open It_Ops
-    ;
-
-    value make lst = Array.of_list &
-      List.filter (fun s -> S.length s <> 0) lst
-    ;
-
-    value length sc =
-      Array.fold_left (fun acc s -> acc + S.length s) 0 sc
-    ;
-
-    value outof () = invalid_arg "Subarray_cat.get"
-    ;
-
-    value get sc i =
-      if i < 0
-      then outof ()
-      else
-        let sc_len = Array.length sc in
-        inner ~i ~j:0
-        where rec inner ~i ~j =
-          if j = sc_len
-          then outof ()
-          else
-            let sj = sc.(j) in
-            let sj_len = S.length sj in
-            if i < sj_len
-            then
-              S.get sj i
-            else
-              inner ~i:(i - sj_len) ~j:(j+1)
-    ;
-
-    value sub_copy_out sc ~ofs ~len =
-      let sc_len = length sc in
-      if ofs < 0 || len < 0 || ofs+len > sc_len
-      then invalid_arg "Subarray_cat.sub_copy_out"
-      else
-      S.of_array & Array.init len (fun i -> get sc (ofs+i))
-    ;
-
-  end
-;
-
-
 type uchar = int;
 
 
