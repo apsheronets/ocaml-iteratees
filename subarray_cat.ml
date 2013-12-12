@@ -81,6 +81,78 @@ value get sc i =
           inner ~i:(i - sj_len) ~j:(j+1)
 ;
 
+
+value empty_array = [| |]
+;
+
+
+value rec sub_copy__loop ~to_skip ~to_copy ~res ~res_i ~sc_i ~sc =
+  if to_copy = 0
+  then
+    ( assert
+        (res != empty_array && to_skip = 0 && to_copy = 0 &&
+         res_i = Array.length res
+        )
+    ; res
+    )
+  else
+    let s = sc.(sc_i) in
+    let s_len = S.length s in
+    if (* s_len = 0 || *) to_skip >= s_len
+       (* ^^^ included in ^^^ as a logic coincidence *)
+    then
+      sub_copy__loop
+        ~to_skip:(to_skip - s_len) ~to_copy ~res ~res_i ~sc_i:(sc_i + 1)
+        ~sc
+    else
+      if to_skip = 0
+      then
+        (* blitting *)
+        let s_copy_len = min to_copy s_len in
+        sub_copy__copy
+          ~res ~res_i ~s ~ofs:0 ~len:s_copy_len
+          ~sc_i ~to_copy ~sc
+      else
+        (* here: 0 < to_skip < s_len:
+           skipping part of s, copying other part
+         *)
+        let s_copy_ofs = to_skip in
+        let s_avail = s_len - s_copy_ofs in
+        let s_copy_len = min to_copy s_avail in
+        sub_copy__copy
+          ~res ~res_i ~s ~ofs:s_copy_ofs ~len:s_copy_len
+          ~sc_i ~to_copy ~sc
+
+and sub_copy__copy ~res ~res_i ~s ~ofs ~len ~sc_i ~to_copy ~sc =
+  let res =
+    if res == empty_array
+    then
+      let init_item = S.get s ofs in
+      Array.make to_copy init_item
+      (* no items were copied, so to_copy == all items we need *)
+    else
+      res
+  in
+  ( S.blit_to_array
+      ~src:s   ~src_ofs:ofs
+      ~dst:res ~dst_ofs:res_i
+      ~len
+  ;
+    (* copy can pass sc_i out of sc to loop when to_copy = 0 *)
+    sub_copy__loop
+      ~to_skip:0 ~to_copy:(to_copy - len) ~res ~res_i:(res_i + len)
+      ~sc_i:(sc_i + 1) ~sc
+  )
+;
+
+value sub_copy_out_to_array ~ofs ~len sc =
+  (* here: checked that ofs..len is a valid subarray of sc. *)
+  if len = 0
+  then empty_array
+  else sub_copy__loop
+    ~to_skip:ofs ~to_copy:len ~res:empty_array ~res_i:0 ~sc ~sc_i:0
+;
+
 value sub_copy_out ?(ofs=0) ?len sc =
   let len =
     match len with
@@ -92,5 +164,5 @@ value sub_copy_out ?(ofs=0) ?len sc =
   if ofs < 0 || len < 0 || ofs+len > sc_len
   then invalid_arg "Subarray_cat.sub_copy_out"
   else
-  S.of_array & Array.init len (fun i -> get sc (ofs+i))
+  S.of_array & sub_copy_out_to_array ~ofs ~len sc
 ;

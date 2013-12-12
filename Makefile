@@ -40,3 +40,6 @@ tests : all
 
 clean :
 	sh ./clean.sh
+
+test_sc : all
+	ocamlc -w A -pp camlp4r -I _build it_Ops.cmo subarray.cmo subarray_cat.cmo test_sc_sub_copy_out.ml -o test_sc && ./test_sc

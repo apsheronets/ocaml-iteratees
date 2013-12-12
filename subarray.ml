@@ -262,3 +262,19 @@ value concat_splitted a b =
       C.mk ~arr:a.arr ~ofs:a.ofs ~len:(alen + blen)
   ]
 ;
+
+value blit_to_array ~src ~src_ofs ~dst ~dst_ofs ~len =
+  if len < 0
+  then invalid_arg "Subarray.blit: len"
+  else
+  if src_ofs < 0 || src_ofs > src.len - len
+  then invalid_arg "Subarray.blit: source"
+  else
+  if dst_ofs < 0 || dst_ofs > Array.length dst - len
+  then invalid_arg "Subarray.blit: destination"
+  else
+    Array.blit
+      src.arr (src_ofs + src.ofs)
+      dst      dst_ofs
+      len
+;
