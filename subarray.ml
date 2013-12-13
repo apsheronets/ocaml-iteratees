@@ -138,8 +138,8 @@ value get_first_item s =
 value destruct_first_item s =
   if s.len = 0
   then None
-  else some &
-    (s.arr.(s.ofs), C.mk ~arr:s.arr ~ofs:(s.ofs+1) ~len:(s.len-1))
+  else Some (
+    (s.arr.(s.ofs), C.mk ~arr:s.arr ~ofs:(s.ofs+1) ~len:(s.len-1)))
 ;
 
 value sub s ~ofs ~len =

@@ -1,5 +1,3 @@
-let some x = Some x
-
 (** пропустить значение последовательно через функции:
     123 >> string_of_int >> print_string
 *)

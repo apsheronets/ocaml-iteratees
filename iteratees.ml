@@ -1044,7 +1044,7 @@ value enumpart_readchars
        mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
        match read_res with
        [ `Error e ->
-           k (EOF (some & ierr_of_merr e)) >>% fun (it, sl') ->
+           k (EOF (Some (ierr_of_merr e))) >>% fun (it, sl') ->
            IO.return (it, lazy sl', EP_None)
        | `Ok have_read ->
            (* let () = fdbg "ep: Read buffer, size %i" have_read in *)
@@ -1462,7 +1462,7 @@ module UTF8
       byte land 0b11_000_000 = 0b10_000_000
 
     and bad_tail =
-      some & Bad_utf8 "tail != 0x80..0xBF"
+      Some (Bad_utf8 "tail != 0x80..0xBF")
     ;
 
 
@@ -1487,12 +1487,12 @@ module UTF8
           if byte < 0x80
           then loop ~ch:(ch+1) ~i:(i+1)
           else if byte <= 0xBF
-          then (ch, i, some & Bad_utf8 "head 0x80..0xBF")
+          then (ch, i, Some (Bad_utf8 "head 0x80..0xBF"))
           else if byte <= 0xC1
           then
             (if relaxed_utf8.val
              then skip_tail ~ch ~i ~sz:2
-             else (ch, i, some & Bad_utf8 "head 0xC0..0xC1 (overlong)")
+             else (ch, i, Some (Bad_utf8 "head 0xC0..0xC1 (overlong)"))
             )
           else if byte < 0xE0
           then skip_tail ~ch ~i ~sz:2
@@ -1500,7 +1500,7 @@ module UTF8
           then skip_tail ~ch ~i ~sz:3
           else if byte <= 0xF4
           then skip_tail ~ch ~i ~sz:4
-          else (ch, i, some & Bad_utf8 "head 0xF5..0xFF")
+          else (ch, i, Some (Bad_utf8 "head 0xF5..0xFF"))
       and skip_tail ~ch ~sz ~i =  (* check len, then check_tail *)
         if i + sz > sc_len
         then (ch, i, None)
@@ -1525,7 +1525,7 @@ module UTF8
         else
           let codepoint = decode_4bytes a b c d in
           if codepoint > 0x10FFFF
-          then (ch, i, some & Bad_utf8 "codepoint > 0x10FFFF")
+          then (ch, i, Some (Bad_utf8 "codepoint > 0x10FFFF"))
           else loop ~ch:(ch+1) ~i:(ifrom+4)
       in
         loop ~ch:0 ~i:0
