@@ -29,7 +29,14 @@ value snoc sc s =
 ;
 
 value length sc =
-  Array.fold_left (fun acc s -> acc + S.length s) 0 sc
+  let cur = ref 0
+  and imax = Array.length sc - 1 in
+  let () =
+    for i = 0 to imax do
+      cur.val := cur.val + S.length sc.(i)
+    done
+  in
+    cur.val
 ;
 
 value outof () = invalid_arg "Subarray_cat.get"
