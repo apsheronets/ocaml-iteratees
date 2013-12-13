@@ -167,6 +167,11 @@ module Sl
     type sl 'el;
     value empty : sl 'el;
     value destr_head : sl 'el -> option (stream 'el * sl 'el);
+
+    (* revealing representation for brave functions: *)
+    external list_of__ : sl 'el -> list (stream 'el) = "%identity";
+    external of_list__ : list (stream 'el) -> sl 'el = "%identity";
+
     value cons : stream 'el -> sl 'el -> sl 'el;
     value get_one_opt : sl 'el -> option (stream 'el);
     value one : stream 'el -> sl 'el;
@@ -178,6 +183,9 @@ module Sl
  =
   struct
     type sl 'el = list (stream 'el);
+    external list_of__ : sl 'el -> list (stream 'el) = "%identity";
+    external of_list__ : list (stream 'el) -> sl 'el = "%identity";
+
     value empty = [];
     value destr_head = fun
       [ [] -> None
@@ -300,10 +308,11 @@ f it =
                [ (IE_cont None k_b) as it_b ->
                    loop_stream it_b k_b sl
                    where rec loop_stream it_b k_b sl =
-                     match Sl.destr_head sl with
-                     [ None -> IO.return (it_b, Sl.empty)
-                     | Some (sl_h, sl_t) ->
+                     match Sl.list_of__ sl with
+                     [ [] -> IO.return (it_b, Sl.empty)
+                     | [sl_h :: sl_t] ->
                          k_b sl_h >>% fun (it_b, sl_h) ->
+                         let sl_t = Sl.of_list__ sl_t in
                          match it_b with
                          [ IE_done _ | IE_cont (Some _) _ ->
                              let sl = match Sl.get_one_opt sl_h with
@@ -1024,11 +1033,11 @@ value enumpart_readchars
      let rec (feed : ! 'a .
        sl 'el -> iteratee_cont 'el 'a -> enumpart_ret 'el 'a
      ) sl k =
-       match Sl.destr_head sl with
-       [ None -> loop k
-       | Some (sl_h, sl_t) ->
+       match Sl.list_of__ sl with
+       [ [] -> loop k
+       | [sl_h :: sl_t] ->
            k sl_h >>% fun (it, sl') ->
-           check (Sl.append sl' sl_t) it
+           check (Sl.append sl' (Sl.of_list__ sl_t)) it
        ]
      and (loop : ! 'a . iteratee_cont 'el 'a -> enumpart_ret 'el 'a) k =
        (* let () = fdbg "ep: loop" in *)
