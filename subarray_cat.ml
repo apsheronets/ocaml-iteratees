@@ -4,55 +4,28 @@ open It_Ops
 module S = Subarray
 ;
 
+(* invariant: subarrays are not empty *)
 type t 'a = array (Subarray.t 'a)
 ;
 
-value (array_filter : ('a -> bool) -> array 'a -> array 'a) pred arr =
-  let bads = Array.fold_left
-    (fun count x -> count + if not & pred x then 1 else 0)
-    0
-    arr
-  in
-  if bads = 0
-  then arr
-  else
-    let new_len = Array.length arr - bads in
-    if new_len = 0
-    then [| |]
-    else
-      let res = Array.make new_len arr.(0)
-      and i = ref 0 in
-      ( Array.iter
-          (fun x ->
-             if pred x
-             then
-               ( res.(i.val) := x
-               ; incr i
-               )
-             else ()
-          )
-          arr
-      ; res
-      )
-;
-
-value make_of_array arr =
-  array_filter (fun s -> S.length s <> 0) arr
-;
-
-value make lst = make_of_array & Array.of_list lst
+value make lst = Array.of_list (List.filter (fun s -> S.length s <> 0) lst)
 ;
 
 value (snoc_array : array 'a -> 'a -> array 'a) sc s =
   let sc_len = Array.length sc in
-  Array.init (sc_len + 1) & fun i ->
-    if i = sc_len
-    then s
-    else sc.(i)
+  let res = Array.make (sc_len + 1) s  (* filling last element here *) in
+  let () = Array.blit
+    sc 0
+    res 0
+    sc_len
+  in
+    res
 ;
 
 value snoc sc s =
-  make_of_array & snoc_array sc s
+  if S.length s = 0
+  then sc
+  else snoc_array sc s
 ;
 
 value length sc =
