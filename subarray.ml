@@ -108,19 +108,18 @@ value to_list s =
     s
 ;
 
+value rec to_string_loop arr str sub_ofs str_ofs left =
+  if left = 0
+  then
+    str
+  else
+    ( str.[str_ofs] := arr.(sub_ofs)
+    ; to_string_loop arr str (sub_ofs + 1) (str_ofs + 1) (left - 1)
+    )
+;
+
 value to_string s =
-  let r = String.create s.len
-  and i = ref 0 in
-  ( fold L
-      (fun () c ->
-         ( r.[i.val] := c
-         ; incr i
-         )
-      )
-      ()
-      s
-  ; r
-  )
+  to_string_loop s.arr (String.make s.len '\x00') s.ofs 0 s.len
 ;
 
 value append_to_list_rev s lst =
