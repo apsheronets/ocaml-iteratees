@@ -82,13 +82,13 @@ value fold dir func init s =
     | R -> (s.ofs + s.len - 1, -1)
     ]
   in
-    inner ~i ~left:s.len ~cur:init
-    where rec inner ~i ~left ~cur =
+    fold_inner ~i ~left:s.len ~cur:init
+    where rec fold_inner ~i ~left ~cur =
       if left = 0
       then
         cur
       else
-        inner
+        fold_inner
           ~i:(i + stp)
           ~left:(left - 1)
           ~cur:(func cur s.arr.(i))
@@ -200,8 +200,8 @@ value break pred s =
 *)
 
 value break_limit ~limit pred s =
-  inner 0
-  where rec inner i =
+  break_limit_inner 0
+  where rec break_limit_inner i =
     if i = limit
     then
       `Hit_limit
@@ -214,7 +214,7 @@ value break_limit ~limit pred s =
         then
           `Found (split_at i s)
         else
-          inner (i + 1)
+          break_limit_inner (i + 1)
 ;
 
 
