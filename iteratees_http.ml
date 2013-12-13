@@ -1,9 +1,6 @@
 open It_Types
 ;
 
-open Dbg
-;
-
 open It_Ops
 ;
 
@@ -51,7 +48,7 @@ value (line : iteratee char ([= `No_term | `Term] * line)) =
     else return n
   in
     break_chars (fun c -> c == '\r' || c == '\n') >>= fun l ->
-let () = dbg "http_line: %S\n" l in
+(* let () = dbg "http_line: %S\n" l in *)
     terminators >>= fun ts ->
     check l ts
 ;
@@ -104,20 +101,20 @@ exception Non_terminated_lines
 value rec (enum_lines : enumeratee char string 'a) i =
   match i with
   [ IE_cont None k ->
-let () = dbg "enum_lines: IE_cont\n" in
+      (* let () = dbg "enum_lines: IE_cont\n" in *)
       line >>= fun term_line ->
         match term_line with
         [ (`Term, "") ->
-let () = dbg "enum_lines:   empty line\n" in
+            (* let () = dbg "enum_lines:   empty line\n" in *)
             return i  (* empty line, normal exit *)
         | (`Term, l) ->
-let () = dbg "enum_lines:   term: %S\n" l in
+            (* let () = dbg "enum_lines:   term: %S\n" l in *)
             liftI (
             k (chunk_of l) >>% fun (i, _s) ->
             IO.return (enum_lines i)
             )
         | (`No_term, l) ->
-let () = dbg "enum_lines:   non-term: %S\n" l in
+            (* let () = dbg "enum_lines:   non-term: %S\n" l in *)
             (lift : _)
             (k (if l="" then EOF (Some End_of_file) else chunk_of l)
              >>% fun (i, _s) ->
@@ -125,10 +122,10 @@ let () = dbg "enum_lines:   non-term: %S\n" l in
             )
         ]
   | IE_cont (Some _) _ ->
-let () = dbg "enum_lines: error\n" in
+      (* let () = dbg "enum_lines: error\n" in *)
       return i
   | IE_done _ ->
-let () = dbg "enum_lines: done\n" in
+      (* let () = dbg "enum_lines: done\n" in *)
       return i
   ]
 ;
@@ -177,8 +174,8 @@ value (enum_chunk_decoded : enumeratee char char 'a) iter =
         match read_hex str with
         [ None -> frame_err (exc ("Bad chunk size: " ^ str)) iter
         | Some size ->
-            let () = dbg
-              "enum_chunk_decoded: frame %i (%x) bytes\n" size size in
+            (* let () = dbg
+              "enum_chunk_decoded: frame %i (%x) bytes\n" size size in *)
             getCRLF iter (
             take size iter >>= fun r ->
             getCRLF r (
@@ -212,6 +209,7 @@ value (enum_chunk_decoded : enumeratee char char 'a) iter =
 ;
 
 
+(*
 value it_dbg it =
   match it with
   [ IE_cont None _ -> "IE_cont None _"
@@ -220,6 +218,7 @@ value it_dbg it =
   | IE_done _ -> "IE_done _"
   ]
 ;
+*)
 
 
 exception Multipart_error of string;
@@ -277,7 +276,7 @@ value it_multipart
                  multipart_max_header_size.val
            | IE_cont (Some _) _ | IE_done _ ->
                it_line >>= fun line ->
-                 let () = fdbg "read_part_headers: line = %S" line in
+                 (* let () = fdbg "read_part_headers: line = %S" line in *)
                  if line = ""
                  then return & List.rev acc
                  else inner (count + 1) [line :: acc]
@@ -316,49 +315,51 @@ value it_multipart
        ]
      in
 
-     let fdbg_stream_char title =
+     (*
+     let fdbg_stream_char_ _title =
        ie_cont
          (fun s ->
-            let () =
-            fdbg "stream: %s: %s" title (dbgstream_char ~body:10 s)
-            in
+            (* let () =
+                 fdbg "stream: %s: %s" title (dbgstream_char ~body:10 s)
+            in *)
             ie_doneM () s
          )
      in
+     *)
 
      let rec loop_boundaries (it_fold : iteratee a r) =
-       let () = fdbg "loop" in
-       fdbg_stream_char "before loop" >>= fun () ->
+       (* let () = fdbg "loop" in *)
+       (* fdbg_stream_char_ "before loop" >>= fun () -> *)
        after_boundary >>= fun ab ->
        match ab with
        [ `Finished ->
-           let () = fdbg "  `Finished" in
+           (* let () = fdbg "  `Finished" in *)
            (* fdbg_stream_char "after finished" >>= fun () -> *)
            it_ignore (* must ignore, RFC 2046 *) >>= fun () ->
            let res = feed_it it_fold (EOF None) in
-           let () = fdbg "    loop_boundaries: res = %s" (it_dbg res) in
+           (* let () = fdbg "    loop_boundaries: res = %s" (it_dbg res) in *)
            map_ready res
        | `Next ->
-           let () = fdbg "  `Next" in
+           (* let () = fdbg "  `Next" in *)
            read_part_headers >>= fun part_headers ->
            let proc = proc_of_it_fold it_fold in
            break_subsequence
              (probe_string crlf_boundary)
              (match proc with
               [ `Proc ->
-                  let () = fdbg "will read this part with it_part" in
+                  (* let () = fdbg "will read this part with it_part" in *)
                   (it_part part_headers) >>= fun p ->
-                  let () = fdbg "it_part ok" in
+                  (* let () = fdbg "it_part ok" in *)
                   return & Some p
               | `Skip ->
-                  let () = fdbg "will skip this part" in
+                  (* let () = fdbg "will skip this part" in *)
                   it_ignore >>= fun () ->
-                  let () = fdbg "part was skipped" in
+                  (* let () = fdbg "part was skipped" in *)
                   return None
               ]
              )
            >>= fun (opt_boundary, opt_it_part) ->
-           fdbg_stream_char "after it_part" >>= fun () ->
+           (* fdbg_stream_char "after it_part" >>= fun () -> *)
            match opt_boundary with
            [ None ->
                (* если границу не нашли *)
@@ -396,18 +397,18 @@ value it_multipart
        >>= fun (opt_boundary, it_last2) ->
        match opt_boundary with
        [ None ->
-           let () = fdbg "sfb: None" in
+           (* let () = fdbg "sfb: None" in *)
            map_ready & feed_it it_fold (EOF None)
        | Some () ->
-           let () = fdbg "sfb: Some" in
+           (* let () = fdbg "sfb: Some" in *)
            eof_to_res it_last2 None >>= fun res_last2 ->
            match res_last2 with
            [ `Ok ([] | ['\r'; '\n']) ->
-               let () = fdbg "sfb: found good prefix" in
+               (* let () = fdbg "sfb: found good prefix" in *)
                loop_boundaries it_fold
            | `Ok _ ->
-               let () = fdbg "sfb: found bad prefix" in
-               fdbg_stream_char "sfb/bad" >>= fun () ->
+               (* let () = fdbg "sfb: found bad prefix" in *)
+               (* fdbg_stream_char "sfb/bad" >>= fun () -> *)
                search_for_beginning ()
            | `Error _ ->
                throw_err (Failure "unexpected error from it_last 2")

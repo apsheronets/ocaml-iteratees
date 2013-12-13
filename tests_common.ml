@@ -727,6 +727,7 @@ exception Left of (exn * string)
 ;
 
 
+(*
 value dump_after title =
    get_stream_eof >>= fun opt_opt_err ->
    let () = fdbg "after %s: %s"
@@ -742,6 +743,7 @@ value dump_after title =
    in
      return ()
 ;
+*)
 
 
 value test_forms ~allsizes () =
@@ -791,21 +793,21 @@ qwe"
     List.iter
       (fun (body, boundary, expected) ->
          let run_size sz =
-           let () = fdbg "test_forms/run_size %i" sz in
+           (* let () = fdbg "test_forms/run_size %i" sz in *)
            match IO.runIO
            ((enum_string ~chunk_size:sz
                body
                (     (H.it_multipart boundary
                         (fun headers ->
-                           let () = fdbg "getting part" in
+                           (* let () = fdbg "getting part" in *)
                            gather_to_string >>= fun part ->
-                           let () = fdbg "got part (%i bytes): %S"
-                             (String.length part) part in
-                           dump_after "part" >>= fun () ->
+                           (* let () = fdbg "got part (%i bytes): %S"
+                             (String.length part) part in *)
+                           (* dump_after "part" >>= fun () -> *)
                            return (headers, part)
                         )
                         (stream2list >>= fun lst ->
-                         dump_after "all parts" >>= fun () ->
+                         (* dump_after "all parts" >>= fun () -> *)
                          return lst
                         )
                      )

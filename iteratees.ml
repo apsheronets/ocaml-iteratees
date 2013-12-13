@@ -31,9 +31,6 @@ value break_chars_buf_init_size = 25
 open It_Ops
 ;
 
-open Dbg
-;
-
 open It_Types
 ;
 
@@ -496,12 +493,14 @@ value (run : iteratee 'el 'a -> IO.m 'a) it =
       match i with
       [ IE_done x -> IO.return x
       | IE_cont opt_exn _ ->
+(*
 let () = dbg "run: exn=%s\n" &
   match opt_exn with
   [ None -> "none"
   | Some e -> Printexc.to_string e
   ]
 in
+*)
           IO.error & match opt_exn with
           [ None -> (Divergent_iteratee "run")
           | Some e -> e
@@ -520,7 +519,7 @@ in
 value (stream2list : iteratee 'el (list 'el)) =
   IE_cont None (fun s -> step [] s
     where rec step rev_acc s =
-      let () = dbg "s2l: step: acc=%i\n" & List.length rev_acc in
+      (* let () = dbg "s2l: step: acc=%i\n" & List.length rev_acc in *)
       match s with
       [ Chunk c ->
           if S.is_empty c
@@ -586,7 +585,9 @@ value (break_fold : ('el -> bool) -> ('a -> 'el -> 'a) -> 'a ->
            then ie_contM (step acc)
            else
              let (matches, tail) = S.break cpred c in
+(*
 let () = dbg "S.break: %i -> %i+%i\n" (S.length c) (S.length matches) (S.length tail) in
+*)
              let new_acc = S.fold S.L func acc matches in
              if S.is_empty tail
              then ie_contM (step new_acc)
@@ -657,7 +658,9 @@ value (drop_while : ('el -> bool) -> iteratee 'el unit) cpred =
     match s with
     [ Chunk c ->
         let str = S.drop_while cpred c in
+(*
 let () = dbg "drop_while: %i -> %i\n" (S.length c) (S.length str) in
+*)
         if S.is_empty str
         then ie_contM step
         else ie_doneM () (Chunk str)
@@ -997,8 +1000,10 @@ and enumpart_poly 'el =
 ;
 
 
+(*
 value fdbg fmt = Printf.ksprintf (Printf.eprintf "forms: %s\n%!") fmt
 ;
+*)
 
 
 (* +
@@ -1026,14 +1031,14 @@ value enumpart_readchars
            check (Sl.append sl' sl_t) it
        ]
      and (loop : ! 'a . iteratee_cont 'el 'a -> enumpart_ret 'el 'a) k =
-       let () = fdbg "ep: loop" in
+       (* let () = fdbg "ep: loop" in *)
        mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
        match read_res with
        [ `Error e ->
            k (EOF (some & ierr_of_merr e)) >>% fun (it, sl') ->
            IO.return (it, lazy sl', EP_None)
        | `Ok have_read ->
-           let () = fdbg "ep: Read buffer, size %i" have_read in
+           (* let () = fdbg "ep: Read buffer, size %i" have_read in *)
            let () = assert (have_read >= 0) in
            if have_read = 0
            then
@@ -1047,10 +1052,10 @@ value enumpart_readchars
      and (check : ! 'a . enumpart 'el 'a) sl it =
        match it with
        [ IE_cont None k ->
-           let () = fdbg "ep: check: cont" in
+           (* let () = fdbg "ep: check: cont" in *)
            feed sl k
        | IE_cont (Some _) _ | IE_done _ ->
-           let () = fdbg "ep: check: ready" in
+           (* let () = fdbg "ep: check: ready" in *)
            IO.return
              ( it
              , lazy (Sl.copy_my_buf buf_arr sl)
@@ -1091,11 +1096,11 @@ value (enum_fd : IO.input_channel -> enumerator char 'a) inch =
 
 
 value (enum_file : string -> enumerator char 'a) filepath iterv =
-  mprintf "opened file %S\n" filepath >>% fun () ->
+  (* mprintf "opened file %S\n" filepath >>% fun () -> *)
   IO.open_in filepath >>% fun inch ->
   enum_fd inch iterv >>% fun r ->
   IO.close_in inch >>% fun () ->
-  mprintf "closed file %S\n" filepath >>% fun () ->
+  (* mprintf "closed file %S\n" filepath >>% fun () -> *)
   IO.return r
 ;
 
@@ -1813,7 +1818,7 @@ value break_limit ~pred ~limit
 
 value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
   let rec limit ~lim ~it =
-    let () = dbg "limit: lim=%i\n%!" lim in
+    (* let () = dbg "limit: lim=%i\n%!" lim in *)
     match (lim, it) with
     [ (_, (IE_done _ | IE_cont (Some _) _))
       | (0, IE_cont None _) -> return it
@@ -1826,7 +1831,7 @@ value (limit : int -> enumeratee 'el 'el 'a) lim = fun it ->
     [ EOF _ -> k s >>% fun (i, _) -> ie_doneM i s
     | Chunk c ->
         let len = S.length c in
-        let () = dbg "limit/step: len=%i\n%!" len in
+        (* let () = dbg "limit/step: len=%i\n%!" len in *)
         if len <= left
         then
           k s >>% fun (it, s) ->
@@ -1876,7 +1881,7 @@ value
     | `Error e -> IO.return (catchk (throw_err e), Sl.one s)
     ]
   in
-    let () = dbg "catchk: entered\n%!" in
+    (* let () = dbg "catchk: entered\n%!" in *)
     let it =
       try
         itf ()
@@ -1900,9 +1905,11 @@ value
 
 
 
+(*
 value printf fmt =
   Printf.ksprintf (fun s -> lift & IO.write IO.stdout s) fmt
 ;
+*)
 
 
 value gather_to_string : iteratee char string =
@@ -2916,7 +2923,7 @@ and feed_proc it_proc s =
   match it_proc with
   [ IE_done _ | IE_cont (Some _) _ -> IO.return it_proc
   | IE_cont None k_proc ->
-      let () = fdbg "bs: feed_proc: %s" (dbgstream s) in
+      (* let () = fdbg "bs: feed_proc: %s" (dbgstream s) in *)
       k_proc s >>% fun (it_proc, _sl) ->
       IO.return it_proc
   ]
@@ -2924,11 +2931,11 @@ and feed_proc it_proc s =
 and loop_q q it_proc =
   match Deque_stream.destr_head q with
   [ None ->
-      let () = fdbg "bs: loop_q: empty q" in
+      (* let () = fdbg "bs: loop_q: empty q" in *)
       ie_contM (step0 it_proc)
   | Some ((first_ofs, first_stream), qtail) ->
-      let () = fdbg "bs: loop_q: first_stream = %s, first_ofs = %i"
-        (dbgstream first_stream) first_ofs in
+      (* let () = fdbg "bs: loop_q: first_stream = %s, first_ofs = %i"
+        (dbgstream first_stream) first_ofs in *)
       match first_stream with
       [ EOF _ ->
           feed_proc it_proc first_stream >>% fun it_proc ->
@@ -2942,7 +2949,7 @@ and step0 it_proc =
   (* запрашиваем чанк, loop_index с первым чанком,
      смещением=0 и пустым хвостом.  вызывается из loop_q. *)
   fun s ->
-    let () = fdbg "bs: step0: stream = %s" (dbgstream s) in
+    (* let () = fdbg "bs: step0: stream = %s" (dbgstream s) in *)
     match s with
     [ Chunk c -> loop_index c 0 it_proc ~qtail:Deque_stream.empty
     | (EOF _ ) as s -> ie_doneM (None, it_proc) s
@@ -2956,8 +2963,10 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
        смещения, имеющихся в значениях loop_index *)
     let len = cur_ofs - first_ofs in
     let () = assert (len >= 0) in
+    (*
     let () = fdbg "bs: feed_first_chunk: %i .. %i (len = %i) (chunk len = %i)"
       first_ofs cur_ofs len (S.length first_chunk) in
+     *)
     if len = 0
     then IO.return it_proc
     else
@@ -2988,14 +2997,14 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
           (* let () = fdbg "bs: loop_ofs: None from subseq" in *)
           loop_ofs (ofs + 1)
       | Some io_sq_it_left ->
-          let () = fdbg "bs: loop_ofs: Some _ from subseq" in
+          (* let () = fdbg "bs: loop_ofs: Some _ from subseq" in *)
           io_sq_it_left >>% fun (sq_it, sq_left) ->
-          let () = fdbg "bs: loop_ofs: sq_left = %s"
+          (* let () = fdbg "bs: loop_ofs: sq_left = %s"
             (Sl.dbgsl sq_left)
-          in
+          in *)
           match sq_it with
           [ IE_done sub_res ->
-             let () = fdbg "bs: loop_ofs: sq_it done" in
+             (* let () = fdbg "bs: loop_ofs: sq_it done" in *)
              (* - когда результат от it_subseq_step -- *)
              (*   - Кормить *)
              feed_first_chunk ~cur_ofs:ofs it_proc >>% fun it_proc ->
@@ -3006,12 +3015,12 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
               "break_sequence: it_subseq_step should return None on error")
               Sl.empty
           | IE_cont None k_sub ->
-              let () = fdbg "bs: loop_ofs: sq_it cont" in
+              (* let () = fdbg "bs: loop_ofs: sq_it cont" in *)
               (* - когда не ошибка, а "хочу ещё" от it_subseq_step -- *)
               (*   - Кормить *)
               feed_first_chunk ~cur_ofs:ofs it_proc >>% fun it_proc ->
-              let () = fdbg "substep/cont: head = %s at ofs %i"
-                (dbgstream (Chunk first_chunk)) ofs in
+              (* let () = fdbg "substep/cont: head = %s at ofs %i"
+                (dbgstream (Chunk first_chunk)) ofs in *)
               let qtail = Deque_stream.cons
                 0
                 (let c = S.drop ofs first_chunk in
@@ -3030,20 +3039,20 @@ and loop_index (first_chunk : S.t _) first_ofs it_proc ~qtail =
 and step1 k_sub it_proc q =
   (* запрашиваем чанк *)
   ie_contM & fun s ->
-  let () = fdbg "step1: new chunk = %s" (dbgstream s) in
+  (* let () = fdbg "step1: new chunk = %s" (dbgstream s) in *)
   let q = Deque_stream.snoc q 0 s in
   (* дать s в k_sub, посмотреть на результат *)
   k_sub s >>% fun (it_sub, sl_sub) ->
   match it_sub with
   [ IE_done r ->
-      let () = fdbg "step1: it_sub done, sl_sub = %s" (Sl.dbgsl sl_sub) in
+      (* let () = fdbg "step1: it_sub done, sl_sub = %s" (Sl.dbgsl sl_sub) in *)
       break_subsequence_ret
         (Deque_stream.cons_sl sl_sub Deque_stream.empty)
         ~sub_res_opt:(Some r)
         it_proc
 
   | IE_cont (Some _) _ ->
-       let () = fdbg "step1: it_sub error" in
+       (* let () = fdbg "step1: it_sub error" in *)
        (* - если ошибка -- loop_index со следующего смещения в первом чанке
             очереди (может дать ofs=len) *)
        match Deque_stream.destr_head q with
@@ -3067,12 +3076,12 @@ and step1 k_sub it_proc q =
        ]
 
   | IE_cont None k_sub ->
-      let () = fdbg "step1: it_sub cont" in
+      (* let () = fdbg "step1: it_sub cont" in *)
       step1 k_sub it_proc q
   ]
 in
   ie_cont & fun s ->
-    let () = fdbg "bs: init: stream = %s" (dbgstream s) in
+    (* let () = fdbg "bs: init: stream = %s" (dbgstream s) in *)
     break_subsequence Deque_stream.(cons 0 s empty) it_proc
 ;
 
@@ -3149,8 +3158,8 @@ value probe_string str
            else `No
      in
      let ret ~arr ofs_after =
-       let () = fdbg "probe_string: len=%i, dropping %i"
-         (S.length arr) ofs_after in
+       (* let () = fdbg "probe_string: len=%i, dropping %i"
+         (S.length arr) ofs_after in *)
        ie_doneM () (Chunk (S.drop ofs_after arr))
      in
      let rec it_first_step arr ~ofs ~i
@@ -3160,7 +3169,7 @@ value probe_string str
        [ `Yes ofs_after -> Some (ret ~arr ofs_after)
        | `No -> None
        | `Maybe i ->
-           let () = fdbg "probe: cont from first step" in
+           (* let () = fdbg "probe: cont from first step" in *)
            Some (ie_contM & it_step ~i)
        ]
      and it_step ~i s =
