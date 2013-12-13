@@ -1809,16 +1809,16 @@ value break_limit ~pred ~limit
       | Chunk c ->
           match S.break_limit ~limit:left pred c with
           [ `Found (prefix, rest) ->
-              ret `Found (SC.append sc prefix) (Chunk rest)
+              ret `Found (SC.snoc sc prefix) (Chunk rest)
               (* not copying here, since [ret->sub_copy_out] will copy *)
           | `Hit_limit ->
               let (prefix, rest) = S.split_at left c in
-              step ~sc:(SC.append sc prefix) ~left:0 (Chunk rest)
+              step ~sc:(SC.snoc sc prefix) ~left:0 (Chunk rest)
               (* not copying here, since [step->ret->sub_copy_out] will copy *)
           | `Hit_end ->
               ie_contM &
                 step
-                  ~sc:(SC.append sc (S.copy c))
+                  ~sc:(SC.snoc sc (S.copy c))
                   ~left:(left - S.length c)
           ]
       ]

@@ -19,7 +19,7 @@ value get : t 'a -> int -> 'a;
    subarrays [sc] into freshly created subarray. *)
 value sub_copy_out : ?ofs:int -> ?len:int -> t 'a -> Subarray.t 'a;
 
-(* [append sc s] appends subarray [s] to the end of
+(* [snoc s] appends subarray [s] to the end of
    concatenated subarrays [sc].
 *)
-value append : t 'a -> Subarray.t 'a -> t 'a;
+value snoc : t 'a -> Subarray.t 'a -> t 'a;

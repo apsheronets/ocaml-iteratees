@@ -43,16 +43,16 @@ value make_of_array arr =
 value make lst = make_of_array & Array.of_list lst
 ;
 
-value (append_array : array 'a -> 'a -> array 'a) src s =
-  let src_len = Array.length src in
-  Array.init (src_len + 1) & fun i ->
-    if i = src_len
+value (snoc_array : array 'a -> 'a -> array 'a) sc s =
+  let sc_len = Array.length sc in
+  Array.init (sc_len + 1) & fun i ->
+    if i = sc_len
     then s
-    else src.(i)
+    else sc.(i)
 ;
 
-value append src s =
-  make_of_array & append_array src s
+value snoc sc s =
+  make_of_array & snoc_array sc s
 ;
 
 value length sc =
