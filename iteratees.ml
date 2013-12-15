@@ -610,7 +610,7 @@ let () = dbg "S.break: %i -> %i+%i\n" (S.length c) (S.length matches) (S.length 
 
 
 value (mapI : ('a -> 'b) -> iteratee 'el 'a -> iteratee 'el 'b) f i =
-  i >>= return % f
+  i >>= fun r -> return (f r)
 ;
 
 
