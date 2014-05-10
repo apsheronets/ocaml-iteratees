@@ -108,18 +108,32 @@ value to_list s =
     s
 ;
 
-value rec to_string_loop arr str sub_ofs str_ofs left =
-  if left = 0
+value rec to_substring_loop ~arr ~str ~sub_ofs ~str_ofs ~len =
+  if len = 0
   then
-    str
+    ()
   else
     ( str.[str_ofs] := arr.(sub_ofs)
-    ; to_string_loop arr str (sub_ofs + 1) (str_ofs + 1) (left - 1)
+    ; to_substring_loop ~arr ~str ~sub_ofs:(sub_ofs + 1)
+        ~str_ofs:(str_ofs + 1) ~len:(len - 1)
     )
 ;
 
+value to_substring s str ofs len =
+  if ofs < 0 || len < 0 || ofs + len > String.length str
+  then invalid_arg "Subarray.to_substring: str/ofs/len"
+  else
+  if len > s.len
+  then invalid_arg "Subarray.to_substring: not enough elements in subarray"
+  else
+    to_substring_loop ~arr:s.arr ~str ~sub_ofs:s.ofs ~str_ofs:ofs ~len
+;
+
 value to_string s =
-  to_string_loop s.arr (String.make s.len '\x00') s.ofs 0 s.len
+  let str = String.make s.len '\x00'in
+  ( to_substring_loop ~arr:s.arr ~str ~sub_ofs:s.ofs ~str_ofs:0 ~len:s.len
+  ; str
+  )
 ;
 
 value append_to_list_rev s lst =

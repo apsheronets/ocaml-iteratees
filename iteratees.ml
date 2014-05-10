@@ -3352,6 +3352,47 @@ value take_exact (count : int) (it : iteratee 'el 'a)
 ;
 
 
+value rec into_substring_step str ofs len =
+  if len = 0
+  then
+    ie_doneM ()
+  else
+    fun
+    [ Chunk c ->
+        let clen = S.length c in
+        if len < clen
+        then
+          let (to_blit, to_leave) = S.split_at len c in
+          ( S.to_substring to_blit str ofs len
+          ; ie_doneM () (Chunk to_leave)
+          )
+        else
+          ( S.to_substring c str ofs clen
+          ; ie_contM (into_substring_step str ofs len)
+          )
+    | EOF None -> IO.error End_of_file
+    | EOF (Some e) -> IO.error e
+    ]
+;
+
+value into_substring str ofs len : iteratee char unit =
+  IE_cont None (into_substring_step str ofs len)
+;
+
+(* +
+   [bytes sz] reads exactly [sz] bytes into new string.
+   [End_of_file] is thrown when input has less than [sz] bytes.
+ *)
+value bytes sz : iteratee char string =
+  prepend
+    (fun () -> String.make sz '\x00')
+    (fun res ->
+       into_substring res 0 sz >>= fun () ->
+       return res
+    )
+;
+
+
 end
 ;  (* `Make' functor *)
 
