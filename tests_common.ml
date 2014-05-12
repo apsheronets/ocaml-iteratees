@@ -246,7 +246,8 @@ value test_driver (line_collector : iteratee H.line 'a) filepath : IO.m unit
   mprintf "Opening file %S\n" filepath >>% fun () ->
   IO.open_in filepath >>% fun inch ->
   mprintf "About to read headers\n" >>% fun () ->
-  mres (run %<< enum_fd inch read_lines_and_one_more_line) >>% fun result ->
+  mres (fun () -> run %<< enum_fd inch read_lines_and_one_more_line)
+  >>% fun result ->
   IO.close_in inch >>% fun () ->
   mprintf "Closed file %S\n" filepath >>% fun () ->
   mprintf "Finished reading headers\n" >>% fun () ->
