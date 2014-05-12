@@ -964,9 +964,9 @@ value mprintf fmt = Printf.ksprintf (IO.write IO.stdout) fmt
 ;
 
 
-value (mres : IO.m 'a -> IO.m (res 'a)) m =
+value (mres : (unit -> IO.m 'a) -> IO.m (res 'a)) m =
   IO.catch
-    (fun () -> m >>% fun r -> IO.return & `Ok r)
+    (fun () -> m () >>% fun r -> IO.return & `Ok r)
     (fun e -> IO.return & `Error e)
 ;
 
@@ -1041,7 +1041,8 @@ value enumpart_readchars
        ]
      and (loop : ! 'a . iteratee_cont 'el 'a -> enumpart_ret 'el 'a) k =
        (* let () = fdbg "ep: loop" in *)
-       mres (read_func inch buf_str 0 buffer_size) >>% fun read_res ->
+       mres (fun () -> read_func inch buf_str 0 buffer_size)
+       >>% fun read_res ->
        match read_res with
        [ `Error e ->
            k (EOF (Some (ierr_of_merr e))) >>% fun (it, sl') ->
