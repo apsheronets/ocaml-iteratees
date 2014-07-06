@@ -41,7 +41,6 @@ module Direct_IO
       | `Error ep -> `Error ep
       ]
     ;
-    value ( >>= ) m f = bind f m;
     value bind_rev m f = bind f m;
 
     value catch f handler =
@@ -51,18 +50,6 @@ module Direct_IO
       ]
     ;
 
-(*
-    value try_bind m f handler =
-      catch (fun () -> m () >>= f) handler
-    ;
-*)
-
-(*
-    value read_into in_ch buf ofs len = fun () ->
-      try `Ok (Pervasives.input in_ch buf ofs len)
-      with [ e -> res_of_exn e ]
-    ;
-*)
     value wrap1 place f = fun a ->
       try `Ok (f a)
       with [ e -> res_of_exn (EIO (e, place)) ]

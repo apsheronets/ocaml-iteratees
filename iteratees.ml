@@ -293,6 +293,12 @@ and iteratee_cont 'el 'a =
 value return res = IE_done res
 ;
 
+(* + preallocated iteratees that simply return some constant values: *)
+value return_unit = IE_done ();
+value return_none = IE_done None;
+value return_true = IE_done True;
+value return_false = IE_done False;
+value return_nil = IE_done [];
 
 value rec
 (bindI : ('a -> iteratee 'el 'b) -> iteratee 'el 'a -> iteratee 'el 'b)
@@ -2220,9 +2226,9 @@ module Reading_ints
         ;
 
         value ( ~- ) n = zero - n
-          and ( >? ) a b = not (a <? b) && not (a =? b)
+          (* and ( >? ) a b = not (a <? b) && not (a =? b) *)
           and ( >=? ) a b = not (a <? b)
-          and ( <>? ) a b = not (a =? b)
+          (* and ( <>? ) a b = not (a =? b) *)
         ;
 
         value one = of_int 1
@@ -2563,8 +2569,7 @@ module Reading_num(Num : NUM)
     value is_decimal_point = fun [ '.' | ',' -> True | _ -> False ]
     ;
 
-    value is_digit c = (c <= '9' && c >= '0')
-      and is_not_digit c = (c < '0' || c > '9')
+    value is_not_digit c = (c < '0' || c > '9')
     ;
 
     value num_fix_unsigned =

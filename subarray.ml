@@ -40,8 +40,6 @@ value empty = C.empty;
 
 open C;
 
-value is_empty s = (0 = length s);
-
 (* copy chars from str[ofs..ofs+len-1] into arr. *)
 value replace_with_substring arr str ofs len =
   let () = assert (ofs >= 0 && len >= 0 && ofs+len <= Array.length arr

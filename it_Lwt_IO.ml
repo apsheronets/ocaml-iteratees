@@ -38,21 +38,12 @@ module It_Lwt_IO
     value return = Lwt.return;
     value bind f m = Lwt.bind m f;
     value bind_rev = Lwt.bind;
-    value ( >>= ) = Lwt.bind;
 
     value catch = Lwt.catch;
-
-(*
-    value try_bind m f handler =
-      catch (fun () -> m () >>= f) handler
-    ;
-*)
-
 
     value wrap_exn place = fun e ->
       Lwt.fail (EIO (e, place))
     ;
-
 
     value wrap1 place f = fun a ->
       catch (fun () -> f a)

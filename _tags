@@ -1,4 +1,4 @@
-<*.ml> | <*.mli> : camlp4r, warn_A
+<*.ml> | <*.mli> : camlp4r, warn(A-44-45)
 
 "it_Ops.ml" | "extStream.ml" : -camlp4r, camlp4o
 
